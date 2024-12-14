@@ -153,7 +153,9 @@ Custom Questions: {custom_questions if custom_questions else 'None'}
 Please provide a comprehensive analysis following the exact structure outlined in the instructions above. 
 Format your response with clear markdown headers and ensure each section is thorough and actionable.
 Make sure to provide specific examples and evidence from the resume and job posting to support your analysis.
-For any percentage matches mentioned, explain the reasoning behind the percentage."""
+For any percentage matches mentioned, explain the reasoning behind the percentage.
+
+Start each major section with a '#' header for proper formatting."""
                         
                         message = client.messages.create(
                             model="claude-3-sonnet-20240229",
@@ -175,13 +177,18 @@ For any percentage matches mentioned, explain the reasoning behind the percentag
                             "Question Responses"
                         ])
                         
-                        # Split analysis into sections (assuming markdown headers)
-                        sections = analysis.split('#')[1:]  # Skip the first empty split
+                        # More robust handling of the analysis response
+                        analysis_text = analysis if isinstance(analysis, str) else str(analysis)
+                        sections = analysis_text.split('#') if '#' in analysis_text else [analysis_text]
+                        sections = [s for s in sections if s.strip()]  # Remove empty sections
                         
-                        # Display each section in its respective tab
-                        for tab, section in zip(tabs, sections):
+                        # Display in tabs, with fallback handling
+                        for tab, content in zip(tabs, sections + [''] * (len(tabs) - len(sections))):
                             with tab:
-                                st.markdown(f"#{section}")
+                                if content.strip():
+                                    st.markdown(f"#{content}")
+                                else:
+                                    st.info("No content for this section")
                         
                         # Save to history
                         st.session_state.user_data['history'].append({
@@ -211,9 +218,16 @@ For any percentage matches mentioned, explain the reasoning behind the percentag
                         "Question Responses"
                     ])
                     
-                    sections = entry['analysis'].split('#')[1:]
-                    for tab, section in zip(hist_tabs, sections):
+                    # More robust handling of historical analysis
+                    analysis_text = entry['analysis'] if isinstance(entry['analysis'], str) else str(entry['analysis'])
+                    sections = analysis_text.split('#') if '#' in analysis_text else [analysis_text]
+                    sections = [s for s in sections if s.strip()]
+                    
+                    for tab, content in zip(hist_tabs, sections + [''] * (len(hist_tabs) - len(sections))):
                         with tab:
-                            st.markdown(f"#{section}")
+                            if content.strip():
+                                st.markdown(f"#{content}")
+                            else:
+                                st.info("No content for this section")
         else:
             st.info("Your analysis history will appear here")
