@@ -33,10 +33,10 @@ def check_password():
         password = st.text_input("Password", type="password")
         
         if st.button("Login"):
-if (username == st.secrets["USERNAME"] and 
-    password == st.secrets["PASSWORD"]):
-    st.session_state.authenticated = True
-    st.rerun()  # Changed from st.experimental_rerun()
+            if (username == st.secrets["USERNAME"] and 
+                    password == st.secrets["PASSWORD"]):
+                st.session_state.authenticated = True
+                st.rerun()
             else:
                 st.error("Invalid username or password")
         return False
