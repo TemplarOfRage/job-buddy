@@ -15,33 +15,35 @@ st.set_page_config(
     layout="wide"
 )
 
-# Load credentials
-credentials = yaml.load(st.secrets['credentials'], Loader=SafeLoader)
-authenticator = stauth.Authenticate(
-    credentials,
-    'job_buddy_cookie',
-    'job_buddy_key',
-    cookie_expiry_days=30
-)
-
-# Authentication
-name, authentication_status, username = authenticator.login('Login', 'main')
-
-if authentication_status == False:
-    st.error('Username/password is incorrect')
-elif authentication_status == None:
-    st.warning('Please enter your username and password')
-elif authentication_status:
-    # Initialize session state for authenticated user
-    if 'user_data' not in st.session_state:
-        st.session_state.user_data = {
-            'resumes': {},
-            'history': []
-        }
+# Initialize session state
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
     
-    authenticator.logout('Logout', 'sidebar')
-    st.sidebar.title(f'Welcome {name}!')
-    
+if 'user_data' not in st.session_state:
+    st.session_state.user_data = {
+        'resumes': {},
+        'history': []
+    }
+
+# Simple authentication
+def check_password():
+    if not st.session_state.authenticated:
+        st.title("Job Buddy Login")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        
+        if st.button("Login"):
+            if (username == st.secrets["USERNAME"] and 
+                password == st.secrets["PASSWORD"]):
+                st.session_state.authenticated = True
+                st.experimental_rerun()
+            else:
+                st.error("Invalid username or password")
+        return False
+    return True
+
+# Main app
+if check_password():
     # Header
     st.markdown("""
         <div style='text-align: center; padding: 1rem; background: linear-gradient(90deg, #2563eb, #1d4ed8); color: white; border-radius: 0.5rem; margin-bottom: 2rem;'>
@@ -49,6 +51,11 @@ elif authentication_status:
             <p style='font-size: 1rem; opacity: 0.9;'>Your AI-powered job application assistant</p>
         </div>
     """, unsafe_allow_html=True)
+    
+    # Logout button in sidebar
+    if st.sidebar.button("Logout"):
+        st.session_state.authenticated = False
+        st.experimental_rerun()
     
     # Sidebar for resume management
     with st.sidebar:
@@ -62,6 +69,7 @@ elif authentication_status:
                 if resume_name and resume_content:
                     st.session_state.user_data['resumes'][resume_name] = resume_content
                     st.success(f"Saved resume: {resume_name}")
+                    st.experimental_rerun()
         
         # Display existing resumes
         if st.session_state.user_data['resumes']:
@@ -108,7 +116,7 @@ elif authentication_status:
                     4. Suggested resume modifications
                     5. Draft responses to any custom questions
                     
-                    Format the response in clear sections with headers."""
+                    Format the response in clear sections with headers and ensure all sections are clearly separated."""
                     
                     message = client.messages.create(
                         model="claude-3-sonnet-20240229",
