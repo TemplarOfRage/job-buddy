@@ -15,26 +15,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# Initialize authentication
-if 'credentials.yaml' not in st.secrets:
-    # First time setup - create credentials
-    credentials = {
-        'credentials': {
-            'usernames': {
-                'epavlopoulos': {  # your username
-                    'email': 'your-email@domain.com',
-                    'name': 'Emanuel Pavlopoulos',
-                    'password': stauth.Hasher(['your-chosen-password']).generate()[0]  # will be hashed
-                }
-            }
-        }
-    }
-    st.secrets['credentials'] = yaml.dump(credentials)
-
 # Load credentials
 credentials = yaml.load(st.secrets['credentials'], Loader=SafeLoader)
 authenticator = stauth.Authenticate(
-    credentials['credentials'],
+    credentials,
     'job_buddy_cookie',
     'job_buddy_key',
     cookie_expiry_days=30
