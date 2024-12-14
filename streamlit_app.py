@@ -33,10 +33,10 @@ def check_password():
         password = st.text_input("Password", type="password")
         
         if st.button("Login"):
-            if (username == st.secrets["USERNAME"] and 
-                password == st.secrets["PASSWORD"]):
-                st.session_state.authenticated = True
-                st.experimental_rerun()
+if (username == st.secrets["USERNAME"] and 
+    password == st.secrets["PASSWORD"]):
+    st.session_state.authenticated = True
+    st.rerun()  # Changed from st.experimental_rerun()
             else:
                 st.error("Invalid username or password")
         return False
@@ -53,9 +53,9 @@ if check_password():
     """, unsafe_allow_html=True)
     
     # Logout button in sidebar
-    if st.sidebar.button("Logout"):
-        st.session_state.authenticated = False
-        st.experimental_rerun()
+if st.sidebar.button("Logout"):
+    st.session_state.authenticated = False
+    st.rerun()  # Changed from st.experimental_rerun()
     
     # Sidebar for resume management
     with st.sidebar:
@@ -66,10 +66,11 @@ if check_password():
             resume_name = st.text_input("Resume Name")
             resume_content = st.text_area("Paste your resume here")
             if st.button("Save Resume"):
-                if resume_name and resume_content:
-                    st.session_state.user_data['resumes'][resume_name] = resume_content
-                    st.success(f"Saved resume: {resume_name}")
-                    st.experimental_rerun()
+if st.button("Save Resume"):
+    if resume_name and resume_content:
+        st.session_state.user_data['resumes'][resume_name] = resume_content
+        st.success(f"Saved resume: {resume_name}")
+        st.rerun()  # Changed from st.experimental_rerun()
         
         # Display existing resumes
         if st.session_state.user_data['resumes']:
@@ -78,8 +79,9 @@ if check_password():
                 with st.expander(f"📄 {name}"):
                     st.text_area("Resume Content", content, height=200, key=f"resume_{name}")
                     if st.button(f"Delete {name}"):
-                        del st.session_state.user_data['resumes'][name]
-                        st.experimental_rerun()
+                        if st.button(f"Delete {name}"):
+    del st.session_state.user_data['resumes'][name]
+    st.rerun()  # Changed from st.experimental_rerun()
 
     # Main content area
     col1, col2 = st.columns([2, 1])
