@@ -1,12 +1,6 @@
 import streamlit as st
 import anthropic
-import yaml
-import streamlit_authenticator as stauth
-import json
 from datetime import datetime
-from pathlib import Path
-import pickle
-from yaml.loader import SafeLoader
 
 # Page configuration
 st.set_page_config(
@@ -18,7 +12,7 @@ st.set_page_config(
 # Initialize session state
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
-    
+
 if 'user_data' not in st.session_state:
     st.session_state.user_data = {
         'resumes': {},
@@ -53,9 +47,9 @@ if check_password():
     """, unsafe_allow_html=True)
     
     # Logout button in sidebar
-if st.sidebar.button("Logout"):
-    st.session_state.authenticated = False
-    st.rerun()  # Changed from st.experimental_rerun()
+    if st.sidebar.button("Logout"):
+        st.session_state.authenticated = False
+        st.rerun()
     
     # Sidebar for resume management
     with st.sidebar:
@@ -66,11 +60,10 @@ if st.sidebar.button("Logout"):
             resume_name = st.text_input("Resume Name")
             resume_content = st.text_area("Paste your resume here")
             if st.button("Save Resume"):
-if st.button("Save Resume"):
-    if resume_name and resume_content:
-        st.session_state.user_data['resumes'][resume_name] = resume_content
-        st.success(f"Saved resume: {resume_name}")
-        st.rerun()  # Changed from st.experimental_rerun()
+                if resume_name and resume_content:
+                    st.session_state.user_data['resumes'][resume_name] = resume_content
+                    st.success(f"Saved resume: {resume_name}")
+                    st.rerun()
         
         # Display existing resumes
         if st.session_state.user_data['resumes']:
@@ -79,9 +72,8 @@ if st.button("Save Resume"):
                 with st.expander(f"📄 {name}"):
                     st.text_area("Resume Content", content, height=200, key=f"resume_{name}")
                     if st.button(f"Delete {name}"):
-                        if st.button(f"Delete {name}"):
-    del st.session_state.user_data['resumes'][name]
-    st.rerun()  # Changed from st.experimental_rerun()
+                        del st.session_state.user_data['resumes'][name]
+                        st.rerun()
 
     # Main content area
     col1, col2 = st.columns([2, 1])
