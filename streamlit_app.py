@@ -44,10 +44,40 @@ if 'user_data' not in st.session_state:
    - Suggested talking points for interviews"""
     }
 
-# [Previous authentication code remains the same]
+# Authentication function
+def check_password():
+    if not st.session_state.authenticated:
+        st.title("Job Buddy Login")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        
+        if st.button("Login"):
+            try:
+                if (username == st.secrets["USERNAME"] and 
+                        password == st.secrets["PASSWORD"]):
+                    st.session_state.authenticated = True
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password")
+            except KeyError:
+                st.error("Authentication credentials not properly configured")
+        return False
+    return True
 
+# Main app
 if check_password():
-    # [Previous header code remains the same]
+    # Header
+    st.markdown("""
+        <div style='text-align: center; padding: 1rem; background: linear-gradient(90deg, #2563eb, #1d4ed8); color: white; border-radius: 0.5rem; margin-bottom: 2rem;'>
+            <h1 style='font-size: 2rem; margin-bottom: 0.5rem;'>Job Buddy</h1>
+            <p style='font-size: 1rem; opacity: 0.9;'>Your AI-powered job application assistant</p>
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Logout button in sidebar
+    if st.sidebar.button("Logout"):
+        st.session_state.authenticated = False
+        st.rerun()
     
     # Sidebar for resume and instruction management
     with st.sidebar:
@@ -55,7 +85,25 @@ if check_password():
         
         with tab1:
             st.header("My Resumes")
-            # [Previous resume management code remains the same]
+            # Add new resume
+            with st.expander("➕ Add New Resume"):
+                resume_name = st.text_input("Resume Name")
+                resume_content = st.text_area("Paste your resume here")
+                if st.button("Save Resume"):
+                    if resume_name and resume_content:
+                        st.session_state.user_data['resumes'][resume_name] = resume_content
+                        st.success(f"Saved resume: {resume_name}")
+                        st.rerun()
+            
+            # Display existing resumes
+            if st.session_state.user_data['resumes']:
+                st.subheader("Saved Resumes")
+                for name, content in st.session_state.user_data['resumes'].items():
+                    with st.expander(f"📄 {name}"):
+                        st.text_area("Resume Content", content, height=200, key=f"resume_{name}")
+                        if st.button(f"Delete {name}"):
+                            del st.session_state.user_data['resumes'][name]
+                            st.rerun()
         
         with tab2:
             st.header("Analysis Instructions")
@@ -91,9 +139,10 @@ if check_password():
         if st.button("Analyze Job Fit"):
             if selected_resume and job_post:
                 with st.spinner("Analyzing your fit for this role..."):
-                    client = anthropic.Client(api_key=st.secrets["ANTHROPIC_API_KEY"])
-                    
-                    prompt = f"""# Analysis Instructions
+                    try:
+                        client = anthropic.Client(api_key=st.secrets["ANTHROPIC_API_KEY"])
+                        
+                        prompt = f"""# Analysis Instructions
 {st.session_state.user_data['instructions']}
 
 # Input Data
@@ -105,42 +154,44 @@ Please provide a comprehensive analysis following the exact structure outlined i
 Format your response with clear markdown headers and ensure each section is thorough and actionable.
 Make sure to provide specific examples and evidence from the resume and job posting to support your analysis.
 For any percentage matches mentioned, explain the reasoning behind the percentage."""
-                    
-                    message = client.messages.create(
-                        model="claude-3-sonnet-20240229",
-                        max_tokens=4096,
-                        messages=[{
-                            "role": "user",
-                            "content": prompt
-                        }]
-                    )
-                    
-                    analysis = message.content
-                    
-                    # Create tabs for organized analysis display
-                    tabs = st.tabs([
-                        "Initial Assessment",
-                        "Match Analysis",
-                        "Success Probability",
-                        "Resume Strategy",
-                        "Question Responses"
-                    ])
-                    
-                    # Split analysis into sections (assuming markdown headers)
-                    sections = analysis.split('#')[1:]  # Skip the first empty split
-                    
-                    # Display each section in its respective tab
-                    for tab, section in zip(tabs, sections):
-                        with tab:
-                            st.markdown(f"#{section}")
-                    
-                    # Save to history
-                    st.session_state.user_data['history'].append({
-                        'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        'job_post': job_post,
-                        'resume': selected_resume,
-                        'analysis': analysis
-                    })
+                        
+                        message = client.messages.create(
+                            model="claude-3-sonnet-20240229",
+                            max_tokens=4096,
+                            messages=[{
+                                "role": "user",
+                                "content": prompt
+                            }]
+                        )
+                        
+                        analysis = message.content
+                        
+                        # Create tabs for organized analysis display
+                        tabs = st.tabs([
+                            "Initial Assessment",
+                            "Match Analysis",
+                            "Success Probability",
+                            "Resume Strategy",
+                            "Question Responses"
+                        ])
+                        
+                        # Split analysis into sections (assuming markdown headers)
+                        sections = analysis.split('#')[1:]  # Skip the first empty split
+                        
+                        # Display each section in its respective tab
+                        for tab, section in zip(tabs, sections):
+                            with tab:
+                                st.markdown(f"#{section}")
+                        
+                        # Save to history
+                        st.session_state.user_data['history'].append({
+                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            'job_post': job_post,
+                            'resume': selected_resume,
+                            'analysis': analysis
+                        })
+                    except Exception as e:
+                        st.error(f"An error occurred during analysis: {str(e)}")
             else:
                 st.error("Please provide both a job posting and select a resume")
 
@@ -164,3 +215,5 @@ For any percentage matches mentioned, explain the reasoning behind the percentag
                     for tab, section in zip(hist_tabs, sections):
                         with tab:
                             st.markdown(f"#{section}")
+        else:
+            st.info("Your analysis history will appear here")
