@@ -245,20 +245,45 @@ if 'clear_form' not in st.session_state:
 
 def check_password():
     if not st.session_state.authenticated:
-        st.title("Job Buddy Login")
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
+        col1, col2 = st.columns([1, 3])
         
-        if st.button("Login"):
-            try:
-                if (username == st.secrets["USERNAME"] and 
-                        password == st.secrets["PASSWORD"]):
-                    st.session_state.authenticated = True
-                    st.rerun()
-                else:
-                    st.error("Invalid username or password")
-            except KeyError:
-                st.error("Authentication credentials not properly configured")
+        with col1:
+            st.title("Login")
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            
+            if st.button("Login", type="primary"):
+                try:
+                    if (username == st.secrets["USERNAME"] and 
+                            password == st.secrets["PASSWORD"]):
+                        st.session_state.authenticated = True
+                        st.rerun()
+                    else:
+                        st.error("Invalid username or password")
+                except KeyError:
+                    st.error("Authentication credentials not properly configured")
+        
+        with col2:
+            st.title("Welcome to Job Buddy")
+            st.markdown("""
+                #### Your AI-Powered Job Application Assistant
+                
+                Transform your job search with intelligent application analysis:
+                
+                🎯 **Smart Job Fit Analysis**  
+                Instantly analyze job postings against your resume
+                
+                ✨ **Custom Resume Tailoring**  
+                Get personalized resume optimization suggestions
+                
+                💡 **Strategic Insights**  
+                Receive detailed match analysis and action items
+                
+                📝 **Application Assistance**  
+                Get help with custom application questions
+                
+                Start your smarter job search today!
+            """)
         return False
     return True
 
@@ -321,7 +346,7 @@ if check_password():
             # Show requirements and save button
             st.markdown("---")
             st.markdown("#### To save your resume:")
-            col1, col2 = st.columns(2)
+            col1, col2 = st.columns([1, 2])
             with col1:
                 st.markdown("✍️ Enter a resume name" + (" ✅" if resume_name else ""))
             with col2:
@@ -422,13 +447,15 @@ Remember to:
                         )
                         
                         # Debug output
-                        with st.expander("Debug: Raw Claude Response", expanded=True):
+                        with st.expander("📊 Analysis Results", expanded=True):
+                            st.subheader("Raw Response Data")
                             st.write("Response object type:", type(message))
                             st.write("Content type:", type(message.content))
                             st.write("Full response object:", message)
                             st.write("Content:", message.content)
                             if hasattr(message.content[0], 'text'):
-                                st.write("First message text:", message.content[0].text)
+                                st.markdown("### Claude's Response:")
+                                st.markdown(message.content[0].text)
                         
                         # Extract the content from the message response
                         analysis = message.content[0].text
