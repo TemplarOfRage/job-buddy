@@ -191,26 +191,51 @@ def get_analysis_history():
 # Analysis helper functions
 def format_resume_for_export(resume_content: str) -> str:
     """
-    Format resume content to be more copy-paste friendly
+    Format resume content to be more copy-paste friendly and properly formatted
     """
+    # Remove 'markdown' text if it appears at the start
+    resume_content = resume_content.replace('markdown', '', 1).strip()
+    
     # Normalize line endings
     resume_content = resume_content.replace('\r\n', '\n').replace('\r', '\n')
     
     # Add proper spacing around headers and sections
     lines = resume_content.split('\n')
     formatted_lines = []
+    
     for i, line in enumerate(lines):
+        # Skip empty lines at the start
+        if i == 0 and not line.strip():
+            continue
+            
         # Add extra space before headers
         if line.startswith('#'):
             if i > 0 and not lines[i-1].isspace() and not lines[i-1] == '':
                 formatted_lines.append('')
             formatted_lines.append(line)
             formatted_lines.append('')  # Add space after header
-        # Add space before bullet points if there isn't one
-        elif line.strip().startswith('- '):
-            if i > 0 and not lines[i-1].isspace() and not lines[i-1].startswith('- '):
+            
+        # Format job entries
+        elif line.strip().startswith('###'):
+            formatted_lines.append(line)  # Job title
+            if i + 1 < len(lines) and not lines[i+1].startswith('*'):
+                formatted_lines.append('')  # Add space if date is missing
+                
+        # Format dates
+        elif line.strip().startswith('*') and line.strip().endswith('*'):
+            formatted_lines.append(line)
+            formatted_lines.append('')  # Add space after date
+            
+        # Format categories
+        elif line.strip().startswith('**'):
+            if i > 0 and not lines[i-1] == '':
                 formatted_lines.append('')
             formatted_lines.append(line)
+            
+        # Format bullet points
+        elif line.strip().startswith('- '):
+            formatted_lines.append(line)
+            
         else:
             formatted_lines.append(line)
     
@@ -218,7 +243,7 @@ def format_resume_for_export(resume_content: str) -> str:
 
 def parse_claude_response(analysis: str) -> Dict[str, str]:
     """
-    Parse Claude's response into structured sections
+    Parse Claude's response into structured sections with improved resume handling
     """
     sections = {
         "Initial Assessment": "",
@@ -231,10 +256,12 @@ def parse_claude_response(analysis: str) -> Dict[str, str]:
     
     current_section = ""
     content_buffer = []
+    started = False
     
     for line in analysis.split('\n'):
         if line.startswith('## '):
-            # Save previous section
+            started = True
+            # Save previous section content
             if current_section and current_section in sections:
                 sections[current_section] = '\n'.join(content_buffer).strip()
             
@@ -257,11 +284,21 @@ def parse_claude_response(analysis: str) -> Dict[str, str]:
             
             content_buffer = []
         else:
-            content_buffer.append(line)
+            if not started and line.strip():
+                # Handle content before first section header
+                content_buffer.append(line)
+            elif current_section:
+                content_buffer.append(line)
     
     # Save the final section
     if current_section and current_section in sections:
         sections[current_section] = '\n'.join(content_buffer).strip()
+    
+    # Clean up the resume section specifically
+    if sections["Tailored Resume"]:
+        sections["Tailored Resume"] = sections["Tailored Resume"].strip()
+        if sections["Tailored Resume"].lower().startswith('markdown'):
+            sections["Tailored Resume"] = sections["Tailored Resume"][8:].strip()
     
     return sections
 
