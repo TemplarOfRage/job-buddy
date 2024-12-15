@@ -193,8 +193,9 @@ def format_resume_for_export(resume_content: str) -> str:
     """
     Format resume content to be more copy-paste friendly and properly formatted
     """
-    # Remove 'markdown' text if it appears at the start
+    # Remove 'markdown' text and backticks if they appear at the start
     resume_content = resume_content.replace('markdown', '', 1).strip()
+    resume_content = resume_content.replace('```', '').strip()
     
     # Normalize line endings
     resume_content = resume_content.replace('\r\n', '\n').replace('\r', '\n')
@@ -208,6 +209,9 @@ def format_resume_for_export(resume_content: str) -> str:
         if i == 0 and not line.strip():
             continue
             
+        # Clean up any remaining backticks in the line
+        line = line.replace('```', '').strip()
+        
         # Add extra space before headers
         if line.startswith('#'):
             if i > 0 and not lines[i-1].isspace() and not lines[i-1] == '':
@@ -239,7 +243,13 @@ def format_resume_for_export(resume_content: str) -> str:
         else:
             formatted_lines.append(line)
     
-    return '\n'.join(formatted_lines)
+    # Final cleanup of any trailing/leading spaces
+    result = '\n'.join(formatted_lines).strip()
+    
+    # Ensure the result doesn't start with backticks or markdown
+    result = result.replace('```markdown', '').replace('```', '').strip()
+    
+    return result
 
 def parse_claude_response(analysis: str) -> Dict[str, str]:
     """
