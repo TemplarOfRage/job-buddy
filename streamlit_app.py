@@ -456,9 +456,9 @@ if check_password():
         
         custom_questions = st.text_area("Any custom application questions? (Optional)", height=100)
 
-        if st.button("Analyze Job Fit"):
+        if st.button("🎯 Craft My Application Package"):
             if selected_resume and job_post:
-                with st.spinner("Analyzing your fit for this role..."):
+                with st.spinner("Analyzing your fit for this role & building your application package..."):
                     try:
                         client = anthropic.Client(api_key=st.secrets["ANTHROPIC_API_KEY"])
                         
