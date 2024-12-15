@@ -327,60 +327,97 @@ def validate_claude_response(response: str) -> bool:
 
 def create_pdf_from_markdown(resume_content: str) -> bytes:
     """
-    Convert markdown content to PDF using pdfkit and wkhtmltopdf-pack
+    Convert markdown content to PDF using reportlab
     """
-    import pdfkit
-    import markdown2
-    from jinja2 import Template
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.pdfgen import canvas
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
+    from reportlab.lib.units import inch
+    import io
+
+    # Create buffer for PDF
+    buffer = io.BytesIO()
     
-    # Convert markdown to HTML
-    html_content = markdown2.markdown(resume_content)
+    # Create PDF document
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=72,
+        leftMargin=72,
+        topMargin=72,
+        bottomMargin=72
+    )
+
+    # Styles
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(
+        name='Heading1',
+        parent=styles['Heading1'],
+        fontSize=16,
+        spaceAfter=20
+    ))
+    styles.add(ParagraphStyle(
+        name='Heading2',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceAfter=15
+    ))
+    styles.add(ParagraphStyle(
+        name='Heading3',
+        parent=styles['Heading3'],
+        fontSize=12,
+        spaceAfter=10
+    ))
+    styles.add(ParagraphStyle(
+        name='BulletPoint',
+        parent=styles['Normal'],
+        fontSize=10,
+        leftIndent=20
+    ))
+
+    # Process markdown content
+    story = []
+    current_list_items = []
     
-    # HTML template with styling
-    template = Template("""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <style>
-            body {
-                font-family: Arial, sans-serif;
-                line-height: 1.6;
-                margin: 1in;
-            }
-            h1 { font-size: 18px; margin-bottom: 10px; }
-            h2 { font-size: 16px; margin-top: 15px; margin-bottom: 10px; }
-            h3 { font-size: 14px; margin-top: 12px; margin-bottom: 8px; }
-            ul { margin: 5px 0; }
-            li { margin: 3px 0; }
-        </style>
-    </head>
-    <body>
-        {{ content }}
-    </body>
-    </html>
-    """)
+    for line in resume_content.split('\n'):
+        line = line.strip()
+        if not line:
+            if current_list_items:
+                story.append(ListFlowable(
+                    [ListItem(Paragraph(item, styles['BulletPoint'])) for item in current_list_items],
+                    bulletType='bullet',
+                    leftIndent=35,
+                    spaceAfter=10
+                ))
+                current_list_items = []
+            story.append(Spacer(1, 12))
+            continue
+
+        if line.startswith('# '):
+            story.append(Paragraph(line[2:], styles['Heading1']))
+        elif line.startswith('## '):
+            story.append(Paragraph(line[3:], styles['Heading2']))
+        elif line.startswith('### '):
+            story.append(Paragraph(line[4:], styles['Heading3']))
+        elif line.startswith('- '):
+            current_list_items.append(line[2:])
+        elif line.startswith('*') and line.endswith('*'):
+            story.append(Paragraph(line.strip('*'), styles['Italic']))
+        elif line.startswith('**') and line.endswith('**'):
+            story.append(Paragraph(line.strip('*'), styles['Bold']))
+        else:
+            story.append(Paragraph(line, styles['Normal']))
+
+    # Build PDF
+    doc.build(story)
     
-    # Render HTML with the template
-    html_doc = template.render(content=html_content)
+    # Get the value from the buffer
+    pdf_value = buffer.getvalue()
+    buffer.close()
     
-    # Configure PDF options
-    options = {
-        'page-size': 'Letter',
-        'margin-top': '0.5in',
-        'margin-right': '0.5in',
-        'margin-bottom': '0.5in',
-        'margin-left': '0.5in',
-        'encoding': "UTF-8",
-    }
-    
-    # Generate PDF
-    try:
-        pdf = pdfkit.from_string(html_doc, False, options=options)
-        return pdf
-    except Exception as e:
-        st.error(f"PDF generation failed: {str(e)}")
-        return None
+    return pdf_value
 
 def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
     """
