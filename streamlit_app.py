@@ -446,3 +446,4 @@ Remember to:
                         import traceback
                         st.code(traceback.format_exc())
             else:
+                st.info
