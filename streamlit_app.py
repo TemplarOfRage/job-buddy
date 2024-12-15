@@ -325,9 +325,66 @@ def validate_claude_response(response: str) -> bool:
     
     return all(section in response for section in required_sections)
 
+def create_pdf_from_markdown(resume_content: str) -> bytes:
+    """
+    Convert markdown content to PDF using pdfkit and wkhtmltopdf-pack
+    """
+    import pdfkit
+    import markdown2
+    from jinja2 import Template
+    
+    # Convert markdown to HTML
+    html_content = markdown2.markdown(resume_content)
+    
+    # HTML template with styling
+    template = Template("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                line-height: 1.6;
+                margin: 1in;
+            }
+            h1 { font-size: 18px; margin-bottom: 10px; }
+            h2 { font-size: 16px; margin-top: 15px; margin-bottom: 10px; }
+            h3 { font-size: 14px; margin-top: 12px; margin-bottom: 8px; }
+            ul { margin: 5px 0; }
+            li { margin: 3px 0; }
+        </style>
+    </head>
+    <body>
+        {{ content }}
+    </body>
+    </html>
+    """)
+    
+    # Render HTML with the template
+    html_doc = template.render(content=html_content)
+    
+    # Configure PDF options
+    options = {
+        'page-size': 'Letter',
+        'margin-top': '0.5in',
+        'margin-right': '0.5in',
+        'margin-bottom': '0.5in',
+        'margin-left': '0.5in',
+        'encoding': "UTF-8",
+    }
+    
+    # Generate PDF
+    try:
+        pdf = pdfkit.from_string(html_doc, False, options=options)
+        return pdf
+    except Exception as e:
+        st.error(f"PDF generation failed: {str(e)}")
+        return None
+
 def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
     """
-    Display analysis content with improved resume formatting, avoiding nesting violations
+    Display analysis content with improved resume formatting and PDF export
     """
     tabs = st.tabs([
         "Initial Assessment",
@@ -355,75 +412,30 @@ def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
                 # Format the resume content
                 formatted_resume = format_resume_for_export(tailored_resume)
                 
-                # Create styled container for resume display
-                st.markdown("""
-                    <style>
-                        .resume-container {
-                            font-family: Arial, sans-serif;
-                            line-height: 1.5;
-                            padding: 20px;
-                            background: white;
-                            border: 1px solid #ddd;
-                            border-radius: 4px;
-                            margin: 10px 0;
-                        }
-                        .resume-container h1 { 
-                            font-size: 1.5em; 
-                            margin: 0.5em 0;
-                            border-bottom: 1px solid #ddd;
-                            padding-bottom: 0.3em;
-                        }
-                        .resume-container h2 { 
-                            font-size: 1.3em; 
-                            margin: 1em 0 0.5em 0;
-                            color: #2c5282;
-                        }
-                        .resume-container h3 { 
-                            font-size: 1.1em; 
-                            margin: 0.8em 0 0.3em 0;
-                            color: #2d3748;
-                        }
-                        .resume-container ul { 
-                            margin: 0.5em 0; 
-                            padding-left: 1.5em;
-                        }
-                        .resume-container li { 
-                            margin: 0.3em 0;
-                        }
-                    </style>
-                """, unsafe_allow_html=True)
+                st.markdown("### Download Options")
                 
-                # Download button
-                st.download_button(
-                    "📄 Download Resume (Markdown)",
-                    formatted_resume,
-                    file_name=f"tailored_resume_{unique_id}.md",
-                    mime="text/markdown",
-                    key=f"download_button_{unique_id}",
-                    help="Download as Markdown format for easy editing"
-                )
+                # Generate and offer PDF download
+                try:
+                    pdf_content = create_pdf_from_markdown(formatted_resume)
+                    if pdf_content:
+                        st.download_button(
+                            "📥 Download as PDF",
+                            pdf_content,
+                            file_name=f"tailored_resume_{unique_id}.pdf",
+                            mime="application/pdf",
+                            key=f"download_pdf_{unique_id}"
+                        )
+                except Exception as e:
+                    st.error("PDF generation is currently unavailable. Please use the copy option.")
                 
-                # Copy button
-                if st.button("📋 Copy to Clipboard", 
-                           key=f"copy_button_{unique_id}",
-                           help="Copy formatted resume to clipboard"):
+                # Copy to clipboard button
+                if st.button("📋 Copy to Clipboard", key=f"copy_{unique_id}"):
                     st.session_state['clipboard'] = formatted_resume
                     st.success("Resume copied to clipboard!")
                 
-                # Display formatted resume
-                st.markdown(f'<div class="resume-container">{formatted_resume}</div>', 
-                          unsafe_allow_html=True)
-                
-                # Add tips without using expander
-                st.markdown("""
-                    ### 📝 Resume Usage Tips
-                    1. Use the **Download** button to save as Markdown
-                    2. Copy the content and paste into:
-                       - Google Docs
-                       - Microsoft Word
-                       - Any text editor
-                    3. The formatting is optimized for clean copy/paste
-                """)
+                # Display the formatted resume
+                st.markdown("### Preview")
+                st.markdown(formatted_resume)
             else:
                 st.warning("No tailored resume generated")
     
