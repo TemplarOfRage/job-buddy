@@ -196,7 +196,7 @@ def parse_claude_response(analysis: str) -> Dict[str, str]:
     
     return sections
 
-def display_analysis_content(sections: Dict[str, str]):
+def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
     """
     Display analysis content in organized tabs
     """
@@ -225,8 +225,9 @@ def display_analysis_content(sections: Dict[str, str]):
                 st.download_button(
                     "Download Tailored Resume",
                     sections["Tailored Resume"],
-                    file_name="tailored_resume.md",
-                    mime="text/markdown"
+                    file_name=f"tailored_resume_{unique_id}.md",
+                    mime="text/markdown",
+                    key=f"download_button_{unique_id}"
                 )
                 st.markdown(sections["Tailored Resume"])
     
@@ -420,11 +421,12 @@ Remember to:
                             messages=[{"role": "user", "content": prompt}]
                         )
                         
+                        # Extract the content from the message response
                         analysis = message.content[0].text
                         
                         # Parse and display the response
                         sections = parse_claude_response(analysis)
-                        display_analysis_content(sections)
+                        display_analysis_content(sections, "main")
                         
                         # Save analysis to history
                         save_analysis(job_post, selected_resume, analysis)
@@ -443,6 +445,6 @@ Remember to:
                 with st.expander(f"Analysis {len(history)-i}: {timestamp}"):
                     st.write(f"Resume used: {resume_name}")
                     sections = parse_claude_response(analysis)
-                    display_analysis_content(sections)
+                    display_analysis_content(sections, f"history_{i}")
         else:
-            st.info("Your analysis history will appear here")
+            st.info
