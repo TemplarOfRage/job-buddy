@@ -6,3 +6,4 @@ PyYAML
 PyPDF2
 python-docx
 docx2txt
+fpdf2==2.7.8
