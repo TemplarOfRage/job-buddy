@@ -280,7 +280,7 @@ def validate_claude_response(response: str) -> bool:
 
 def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
     """
-    Display analysis content with improved resume formatting
+    Display analysis content with improved resume formatting, avoiding nesting violations
     """
     tabs = st.tabs([
         "Initial Assessment",
@@ -367,16 +367,16 @@ def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
                 st.markdown(f'<div class="resume-container">{formatted_resume}</div>', 
                           unsafe_allow_html=True)
                 
-                # Add tips for usage
-                with st.expander("📝 Resume Usage Tips"):
-                    st.markdown("""
-                        1. Use the **Download** button to save as Markdown
-                        2. Copy the content and paste into:
-                           - Google Docs
-                           - Microsoft Word
-                           - Any text editor
-                        3. The formatting is optimized for clean copy/paste
-                    """)
+                # Add tips without using expander
+                st.markdown("""
+                    ### 📝 Resume Usage Tips
+                    1. Use the **Download** button to save as Markdown
+                    2. Copy the content and paste into:
+                       - Google Docs
+                       - Microsoft Word
+                       - Any text editor
+                    3. The formatting is optimized for clean copy/paste
+                """)
             else:
                 st.warning("No tailored resume generated")
     
