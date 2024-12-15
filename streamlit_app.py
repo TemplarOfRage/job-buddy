@@ -346,23 +346,22 @@ def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
                     </style>
                 """, unsafe_allow_html=True)
                 
-                # Download buttons
-                col_download, col_copy = st.columns(2)
-                with col_download:
-                    st.download_button(
-                        "📄 Download Resume (Markdown)",
-                        formatted_resume,
-                        file_name=f"tailored_resume_{unique_id}.md",
-                        mime="text/markdown",
-                        key=f"download_button_{unique_id}",
-                        help="Download as Markdown format for easy editing"
-                    )
-                with col_copy:
-                    if st.button("📋 Copy to Clipboard", 
-                               key=f"copy_button_{unique_id}",
-                               help="Copy formatted resume to clipboard"):
-                        st.session_state['clipboard'] = formatted_resume
-                        st.success("Resume copied to clipboard!")
+                # Download button
+                st.download_button(
+                    "📄 Download Resume (Markdown)",
+                    formatted_resume,
+                    file_name=f"tailored_resume_{unique_id}.md",
+                    mime="text/markdown",
+                    key=f"download_button_{unique_id}",
+                    help="Download as Markdown format for easy editing"
+                )
+                
+                # Copy button
+                if st.button("📋 Copy to Clipboard", 
+                           key=f"copy_button_{unique_id}",
+                           help="Copy formatted resume to clipboard"):
+                    st.session_state['clipboard'] = formatted_resume
+                    st.success("Resume copied to clipboard!")
                 
                 # Display formatted resume
                 st.markdown(f'<div class="resume-container">{formatted_resume}</div>', 
@@ -386,7 +385,7 @@ def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
     
     with tabs[4]:
         st.markdown(sections["Follow-up Actions"])
-
+        
 def check_password():
     if not st.session_state.authenticated:
         col1, col2 = st.columns([1, 3])
