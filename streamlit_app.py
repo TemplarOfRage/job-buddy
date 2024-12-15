@@ -197,12 +197,17 @@ if check_password():
         
         # Add new resume
         with st.expander("➕ Add New Resume"):
-            resume_name = st.text_input("Resume Name")
+            resume_name = st.text_input("Resume Name", key="resume_name")
             upload_type = st.radio("Upload Type", ["File Upload", "Paste Text"])
+            
+            # Track if we have content to save
+            has_content = False
+            resume_content = None
+            file_type = None
             
             if upload_type == "File Upload":
                 uploaded_file = st.file_uploader("Choose your resume file", type=['pdf', 'txt', 'docx'])
-                if uploaded_file is not None and resume_name:
+                if uploaded_file is not None:
                     file_type = uploaded_file.type
                     if file_type == "application/pdf":
                         resume_content = extract_text_from_pdf(uploaded_file)
@@ -212,16 +217,45 @@ if check_password():
                         resume_content = uploaded_file.getvalue().decode()
                     
                     if resume_content:
-                        if st.button("Save Resume"):
-                            save_resume(resume_name, resume_content, file_type)
-                            st.success(f"Saved resume: {resume_name}")
-                            st.rerun()
+                        has_content = True
+                        st.success("✅ File uploaded successfully")
+                        st.markdown("### Preview:")
+                        st.text_area("Resume Content Preview", resume_content, height=100, disabled=True)
             else:
-                resume_content = st.text_area("Paste your resume here")
-                if st.button("Save Resume") and resume_name and resume_content:
-                    save_resume(resume_name, resume_content, 'text/plain')
-                    st.success(f"Saved resume: {resume_name}")
+                resume_content = st.text_area("Paste your resume here", height=200)
+                if resume_content:
+                    has_content = True
+                    file_type = 'text/plain'
+            
+            # Show requirements and save button
+            st.markdown("---")
+            st.markdown("#### To save your resume:")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("✍️ Enter a resume name" + (" ✅" if resume_name else ""))
+            with col2:
+                st.markdown("📄 Add resume content" + (" ✅" if has_content else ""))
+            
+            # Save button with clear state indication
+            save_button = st.button(
+                "💾 Save Resume",
+                disabled=not (resume_name and has_content),
+                help="Both resume name and content are required to save",
+                type="primary"
+            )
+            
+            if save_button:
+                if resume_name and has_content:
+                    save_resume(resume_name, resume_content, file_type)
+                    st.success(f"✅ Successfully saved resume: {resume_name}")
+                    # Clear the inputs
+                    st.session_state.resume_name = ""
                     st.rerun()
+                else:
+                    if not resume_name:
+                        st.error("Please enter a resume name")
+                    if not has_content:
+                        st.error("Please add resume content")
         
         # Display existing resumes
         resumes = get_resumes()
