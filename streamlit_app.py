@@ -8,6 +8,7 @@ import PyPDF2
 import io
 import docx2txt
 from contextlib import contextmanager
+from typing import Dict, List, Tuple
 
 # Page configuration
 st.set_page_config(
@@ -152,6 +153,88 @@ def get_analysis_history():
                     FROM analysis_history 
                     ORDER BY created_at DESC''')
         return c.fetchall()
+
+# Analysis helper functions
+def parse_claude_response(analysis: str) -> Dict[str, str]:
+    """
+    Parse Claude's response into structured sections
+    """
+    sections = {
+        "Initial Assessment": "",
+        "Match Analysis": "",
+        "Resume Strategy": "",
+        "Tailored Resume": "",
+        "Custom Responses": "",
+        "Follow-up Actions": ""
+    }
+    
+    current_section = ""
+    content_buffer = []
+    
+    for line in analysis.split('\n'):
+        if line.startswith('## '):
+            # Save previous section
+            if current_section and current_section in sections:
+                sections[current_section] = '\n'.join(content_buffer)
+            
+            # Start new section
+            header = line.lstrip('#').strip()
+            if "Resume" in header:
+                current_section = "Tailored Resume"
+            else:
+                for section in sections:
+                    if any(word.lower() in header.lower() for word in section.split()):
+                        current_section = section
+                        break
+            content_buffer = []
+        else:
+            content_buffer.append(line)
+    
+    # Save last section
+    if current_section and current_section in sections:
+        sections[current_section] = '\n'.join(content_buffer)
+    
+    return sections
+
+def display_analysis_content(sections: Dict[str, str]):
+    """
+    Display analysis content in organized tabs
+    """
+    tabs = st.tabs([
+        "Initial Assessment",
+        "Match Analysis",
+        "Strategy & Resume",
+        "Custom Responses",
+        "Follow-up Actions"
+    ])
+    
+    with tabs[0]:
+        st.markdown(sections["Initial Assessment"])
+    
+    with tabs[1]:
+        st.markdown(sections["Match Analysis"])
+    
+    with tabs[2]:
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            st.markdown("### Strategy")
+            st.markdown(sections["Resume Strategy"])
+        with col2:
+            st.markdown("### Tailored Resume")
+            if sections["Tailored Resume"]:
+                st.download_button(
+                    "Download Tailored Resume",
+                    sections["Tailored Resume"],
+                    file_name="tailored_resume.md",
+                    mime="text/markdown"
+                )
+                st.markdown(sections["Tailored Resume"])
+    
+    with tabs[3]:
+        st.markdown(sections["Custom Responses"])
+    
+    with tabs[4]:
+        st.markdown(sections["Follow-up Actions"])
 
 # Initialize session state
 if 'authenticated' not in st.session_state:
@@ -301,57 +384,50 @@ if check_password():
                     try:
                         client = anthropic.Client(api_key=st.secrets["ANTHROPIC_API_KEY"])
                         
-                        prompt = f"""Analysis Instructions:
-{ANALYSIS_INSTRUCTIONS}
+                        prompt = f"""Please analyze this job application following a structured format:
 
-Resume Template to Follow:
-{RESUME_TEMPLATE}
+## Initial Assessment
+[Your assessment of the role, company, and requirements]
 
-Input Data:
+## Match Analysis
+[Detailed analysis of matches and gaps]
+
+## Resume Strategy
+[Strategy for resume tailoring]
+
+## Tailored Resume
+[Complete tailored resume in markdown format]
+
+## Custom Responses
+[Responses to any custom questions]
+
+## Follow-up Actions
+[Recommended next steps]
+
 Job Post: {job_post}
 Resume: {resumes[selected_resume][0]}
 Custom Questions: {custom_questions if custom_questions else 'None'}
 
-Please provide a comprehensive analysis following the structure outlined in the instructions above.
-Remember:
-1. Only use quantitative metrics that are explicitly provided in the resume
-2. Identify areas where additional context might be helpful
-3. Match writing style to the resume for any custom responses
-4. Format the tailored resume exactly according to the template
+Remember to:
+1. Use only quantitative metrics from the original resume
+2. Follow the exact resume template format
+3. Make the tailored resume immediately usable
+4. Keep section headers exactly as shown above"""
 
-Format your response with clear markdown headers and ensure each section is thorough and actionable."""
-                        
                         message = client.messages.create(
                             model="claude-3-sonnet-20240229",
                             max_tokens=4096,
-                            messages=[{
-                                "role": "user",
-                                "content": prompt
-                            }]
+                            messages=[{"role": "user", "content": prompt}]
                         )
                         
                         analysis = message.content
                         
+                        # Parse and display the response
+                        sections = parse_claude_response(analysis)
+                        display_analysis_content(sections)
+                        
                         # Save analysis to history
                         save_analysis(job_post, selected_resume, analysis)
-                        
-                        # Create tabs for organized analysis display
-                        tabs = st.tabs([
-                            "Initial Assessment",
-                            "Match Analysis",
-                            "Resume Strategy",
-                            "Custom Responses",
-                            "Follow-up Actions"
-                        ])
-                        
-                        sections = analysis.split('#')[1:] if '#' in analysis else [analysis]
-                        
-                        for tab, content in zip(tabs, sections + [''] * (len(tabs) - len(sections))):
-                            with tab:
-                                if content.strip():
-                                    st.markdown(f"#{content}")
-                                else:
-                                    st.info("No content for this section")
                         
                     except Exception as e:
                         st.error(f"An error occurred during analysis: {str(e)}")
@@ -366,22 +442,7 @@ Format your response with clear markdown headers and ensure each section is thor
             for i, (job_post, resume_name, analysis, timestamp) in enumerate(history):
                 with st.expander(f"Analysis {len(history)-i}: {timestamp}"):
                     st.write(f"Resume used: {resume_name}")
-                    
-                    hist_tabs = st.tabs([
-                        "Initial Assessment",
-                        "Match Analysis",
-                        "Resume Strategy",
-                        "Custom Responses",
-                        "Follow-up Actions"
-                    ])
-                    
-                    sections = analysis.split('#')[1:] if '#' in analysis else [analysis]
-                    
-                    for tab, content in zip(hist_tabs, sections + [''] * (len(hist_tabs) - len(sections))):
-                        with tab:
-                            if content.strip():
-                                st.markdown(f"#{content}")
-                            else:
-                                st.info("No content for this section")
+                    sections = parse_claude_response(analysis)
+                    display_analysis_content(sections)
         else:
             st.info("Your analysis history will appear here")
