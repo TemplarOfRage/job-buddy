@@ -1,6 +1,9 @@
 import streamlit as st
 import anthropic
 from datetime import datetime
+import sqlite3
+import json
+from pathlib import Path
 
 # Page configuration
 st.set_page_config(
@@ -9,42 +12,82 @@ st.set_page_config(
     layout="wide"
 )
 
+# Custom analysis instructions based on your requirements
+ANALYSIS_INSTRUCTIONS = """# Job Application Analysis Process
+
+1. Initial Assessment
+   - Role Overview: Company, position, level, key focus areas
+   - Requirements Analysis: Must-haves vs. nice-to-haves
+   - Company Culture Assessment
+
+2. Match Analysis
+   - Strong Matches: Perfect fits from current experience (using only provided metrics)
+   - Solid Matches: Good matches needing minor reframing
+   - Gap Areas: Missing or weak matches
+   - Additional Context Needed: Areas where more information might help
+
+3. Resume Tailoring Strategy
+   - Format: Using provided resume template
+   - Content Adjustments: Keeping all quantitative metrics honest
+   - Highlighting Relevant Experience
+   - Gap Mitigation Strategies
+
+4. Custom Questions
+   - Personalized Response Strategy
+   - Writing Style Matching
+   - Professional Yet Authentic Tone
+   - Key Talking Points
+
+5. Follow-up Actions
+   - Additional Experience to Include
+   - Skills to Highlight
+   - Areas Needing Clarification"""
+
+RESUME_TEMPLATE = """# [Full Name]
+[City, State] | [Phone] | [Email]
+
+## Professional Experience
+
+### [Job Title] | [Company Name] | [Location]
+*[Date Range]*
+
+**[Category Header]**
+- [Achievement/Responsibility with metrics]
+- [Achievement/Responsibility with metrics]
+
+## Technical Skills
+- [Skill Category]: [List of skills]
+
+## Education
+### [Degree]
+[Institution] | [Location] | *[Completion Date]*"""
+
+# Initialize connection to SQLite db
+@st.cache_resource
+def init_connection():
+    return sqlite3.connect('file:job_buddy.db?mode=memory', uri=True)
+
+conn = init_connection()
+
+# Initialize database tables
+def init_db():
+    c = conn.cursor()
+    c.execute('''CREATE TABLE IF NOT EXISTS resumes
+                 (name TEXT PRIMARY KEY, content TEXT, created_at TIMESTAMP)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS analysis_history
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                  job_post TEXT,
+                  resume_name TEXT,
+                  analysis TEXT,
+                  created_at TIMESTAMP)''')
+    conn.commit()
+
+init_db()
+
 # Initialize session state
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
-if 'user_data' not in st.session_state:
-    st.session_state.user_data = {
-        'resumes': {},
-        'history': [],
-        'instructions': """# Job Application Analysis Process
-
-1. Initial Assessment
-   - Role Overview
-   - Company Analysis
-   - Key Requirements
-
-2. Match Analysis
-   - Strong Matches (Perfect fits from experience)
-   - Solid Matches (Good matches needing minor reframing)
-   - Gap Areas (Missing or weak matches)
-
-3. Success Probability
-   - Overall Match Percentage
-   - Key Strengths
-   - Challenge Areas
-   - Recommended Approach
-
-4. Resume Modification Strategy
-   - Priority Changes
-   - Additional Optimizations
-
-5. Question Responses
-   - Tailored responses to any custom questions
-   - Suggested talking points for interviews"""
-    }
-
-# Authentication function
 def check_password():
     if not st.session_state.authenticated:
         st.title("Job Buddy Login")
@@ -79,43 +122,38 @@ if check_password():
         st.session_state.authenticated = False
         st.rerun()
     
-    # Sidebar for resume and instruction management
+    # Sidebar for resume management
     with st.sidebar:
-        tab1, tab2 = st.tabs(["📄 Resumes", "📋 Instructions"])
+        st.header("My Resumes")
         
-        with tab1:
-            st.header("My Resumes")
-            # Add new resume
-            with st.expander("➕ Add New Resume"):
-                resume_name = st.text_input("Resume Name")
-                resume_content = st.text_area("Paste your resume here")
-                if st.button("Save Resume"):
-                    if resume_name and resume_content:
-                        st.session_state.user_data['resumes'][resume_name] = resume_content
-                        st.success(f"Saved resume: {resume_name}")
+        # Add new resume
+        with st.expander("➕ Add New Resume"):
+            resume_name = st.text_input("Resume Name")
+            resume_content = st.text_area("Paste your resume here")
+            if st.button("Save Resume"):
+                if resume_name and resume_content:
+                    c = conn.cursor()
+                    c.execute('INSERT OR REPLACE INTO resumes VALUES (?, ?, CURRENT_TIMESTAMP)',
+                            (resume_name, resume_content))
+                    conn.commit()
+                    st.success(f"Saved resume: {resume_name}")
+                    st.rerun()
+        
+        # Display existing resumes
+        c = conn.cursor()
+        c.execute('SELECT name, content FROM resumes')
+        resumes = dict(c.fetchall())
+        
+        if resumes:
+            st.subheader("Saved Resumes")
+            for name, content in resumes.items():
+                with st.expander(f"📄 {name}"):
+                    st.text_area("Resume Content", content, height=200, key=f"resume_{name}")
+                    if st.button(f"Delete {name}"):
+                        c = conn.cursor()
+                        c.execute('DELETE FROM resumes WHERE name = ?', (name,))
+                        conn.commit()
                         st.rerun()
-            
-            # Display existing resumes
-            if st.session_state.user_data['resumes']:
-                st.subheader("Saved Resumes")
-                for name, content in st.session_state.user_data['resumes'].items():
-                    with st.expander(f"📄 {name}"):
-                        st.text_area("Resume Content", content, height=200, key=f"resume_{name}")
-                        if st.button(f"Delete {name}"):
-                            del st.session_state.user_data['resumes'][name]
-                            st.rerun()
-        
-        with tab2:
-            st.header("Analysis Instructions")
-            instructions = st.text_area(
-                "Modify analysis instructions",
-                value=st.session_state.user_data['instructions'],
-                height=400
-            )
-            if st.button("Update Instructions"):
-                st.session_state.user_data['instructions'] = instructions
-                st.success("Instructions updated!")
-                st.rerun()
 
     # Main content area
     col1, col2 = st.columns([2, 1])
@@ -125,10 +163,10 @@ if check_password():
         job_post = st.text_area("Paste the job posting here", height=200)
         
         # Resume selection
-        if st.session_state.user_data['resumes']:
+        if resumes:
             selected_resume = st.selectbox(
                 "Select a resume to use",
-                options=list(st.session_state.user_data['resumes'].keys())
+                options=list(resumes.keys())
             )
         else:
             st.warning("Please add a resume in the sidebar first")
@@ -142,20 +180,25 @@ if check_password():
                     try:
                         client = anthropic.Client(api_key=st.secrets["ANTHROPIC_API_KEY"])
                         
-                        prompt = f"""# Analysis Instructions
-{st.session_state.user_data['instructions']}
+                        prompt = f"""Analysis Instructions:
+{ANALYSIS_INSTRUCTIONS}
 
-# Input Data
+Resume Template to Follow:
+{RESUME_TEMPLATE}
+
+Input Data:
 Job Post: {job_post}
-Resume: {st.session_state.user_data['resumes'][selected_resume]}
+Resume: {resumes[selected_resume]}
 Custom Questions: {custom_questions if custom_questions else 'None'}
 
-Please provide a comprehensive analysis following the exact structure outlined in the instructions above. 
-Format your response with clear markdown headers and ensure each section is thorough and actionable.
-Make sure to provide specific examples and evidence from the resume and job posting to support your analysis.
-For any percentage matches mentioned, explain the reasoning behind the percentage.
+Please provide a comprehensive analysis following the structure outlined in the instructions above.
+Remember:
+1. Only use quantitative metrics that are explicitly provided in the resume
+2. Identify areas where additional context might be helpful
+3. Match writing style to the resume for any custom responses
+4. Format the tailored resume exactly according to the template
 
-Start each major section with a '#' header for proper formatting."""
+Format your response with clear markdown headers and ensure each section is thorough and actionable."""
                         
                         message = client.messages.create(
                             model="claude-3-sonnet-20240229",
@@ -168,21 +211,25 @@ Start each major section with a '#' header for proper formatting."""
                         
                         analysis = message.content
                         
+                        # Save analysis to history
+                        c = conn.cursor()
+                        c.execute('''INSERT INTO analysis_history 
+                                   (job_post, resume_name, analysis, created_at)
+                                   VALUES (?, ?, ?, CURRENT_TIMESTAMP)''',
+                                (job_post, selected_resume, analysis))
+                        conn.commit()
+                        
                         # Create tabs for organized analysis display
                         tabs = st.tabs([
                             "Initial Assessment",
                             "Match Analysis",
-                            "Success Probability",
                             "Resume Strategy",
-                            "Question Responses"
+                            "Custom Responses",
+                            "Follow-up Actions"
                         ])
                         
-                        # More robust handling of the analysis response
-                        analysis_text = analysis if isinstance(analysis, str) else str(analysis)
-                        sections = analysis_text.split('#') if '#' in analysis_text else [analysis_text]
-                        sections = [s for s in sections if s.strip()]  # Remove empty sections
+                        sections = analysis.split('#')[1:] if '#' in analysis else [analysis]
                         
-                        # Display in tabs, with fallback handling
                         for tab, content in zip(tabs, sections + [''] * (len(tabs) - len(sections))):
                             with tab:
                                 if content.strip():
@@ -190,13 +237,6 @@ Start each major section with a '#' header for proper formatting."""
                                 else:
                                     st.info("No content for this section")
                         
-                        # Save to history
-                        st.session_state.user_data['history'].append({
-                            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            'job_post': job_post,
-                            'resume': selected_resume,
-                            'analysis': analysis
-                        })
                     except Exception as e:
                         st.error(f"An error occurred during analysis: {str(e)}")
             else:
@@ -204,24 +244,26 @@ Start each major section with a '#' header for proper formatting."""
 
     with col2:
         st.header("📚 Analysis History")
-        if st.session_state.user_data['history']:
-            for i, entry in enumerate(reversed(st.session_state.user_data['history'])):
-                with st.expander(f"Analysis {len(st.session_state.user_data['history'])-i}: {entry['timestamp']}"):
-                    st.write(f"Resume used: {entry['resume']}")
+        c = conn.cursor()
+        c.execute('''SELECT job_post, resume_name, analysis, created_at 
+                    FROM analysis_history 
+                    ORDER BY created_at DESC''')
+        history = c.fetchall()
+        
+        if history:
+            for i, (job_post, resume_name, analysis, timestamp) in enumerate(history):
+                with st.expander(f"Analysis {len(history)-i}: {timestamp}"):
+                    st.write(f"Resume used: {resume_name}")
                     
-                    # Create tabs for historical analysis
                     hist_tabs = st.tabs([
                         "Initial Assessment",
                         "Match Analysis",
-                        "Success Probability",
                         "Resume Strategy",
-                        "Question Responses"
+                        "Custom Responses",
+                        "Follow-up Actions"
                     ])
                     
-                    # More robust handling of historical analysis
-                    analysis_text = entry['analysis'] if isinstance(entry['analysis'], str) else str(entry['analysis'])
-                    sections = analysis_text.split('#') if '#' in analysis_text else [analysis_text]
-                    sections = [s for s in sections if s.strip()]
+                    sections = analysis.split('#')[1:] if '#' in analysis else [analysis]
                     
                     for tab, content in zip(hist_tabs, sections + [''] * (len(hist_tabs) - len(sections))):
                         with tab:
