@@ -156,6 +156,8 @@ def get_analysis_history():
 # Initialize session state
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
+if 'clear_form' not in st.session_state:
+    st.session_state.clear_form = False
 
 def check_password():
     if not st.session_state.authenticated:
@@ -197,6 +199,11 @@ if check_password():
         
         # Add new resume
         with st.expander("➕ Add New Resume"):
+            # Check if we need to clear the form
+            if st.session_state.clear_form:
+                st.session_state.clear_form = False
+                st.rerun()
+            
             resume_name = st.text_input("Resume Name", key="resume_name")
             upload_type = st.radio("Upload Type", ["File Upload", "Paste Text"])
             
@@ -248,8 +255,8 @@ if check_password():
                 if resume_name and has_content:
                     save_resume(resume_name, resume_content, file_type)
                     st.success(f"✅ Successfully saved resume: {resume_name}")
-                    # Clear the inputs
-                    st.session_state.resume_name = ""
+                    # Set flag to clear form on next rerun
+                    st.session_state.clear_form = True
                     st.rerun()
                 else:
                     if not resume_name:
