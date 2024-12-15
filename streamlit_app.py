@@ -420,7 +420,7 @@ Remember to:
                             messages=[{"role": "user", "content": prompt}]
                         )
                         
-                        analysis = message.content
+                        analysis = message.content[0].text
                         
                         # Parse and display the response
                         sections = parse_claude_response(analysis)
