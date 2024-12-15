@@ -191,7 +191,7 @@ def get_analysis_history():
 # Analysis helper functions
 def parse_claude_response(analysis: str) -> Dict[str, str]:
     """
-    Parse Claude's response into structured sections
+    Parse Claude's response into structured sections with improved resume handling
     """
     sections = {
         "Initial Assessment": "",
@@ -204,35 +204,67 @@ def parse_claude_response(analysis: str) -> Dict[str, str]:
     
     current_section = ""
     content_buffer = []
+    started = False
     
     for line in analysis.split('\n'):
         if line.startswith('## '):
-            # Save previous section
+            started = True
+            # Save previous section content
             if current_section and current_section in sections:
-                sections[current_section] = '\n'.join(content_buffer)
+                sections[current_section] = '\n'.join(content_buffer).strip()
             
-            # Start new section
+            # Extract section header
             header = line.lstrip('#').strip()
-            if "Resume" in header:
+            
+            # Match section header to our expected sections
+            if "Resume" in header and "Tailored" in header:
                 current_section = "Tailored Resume"
-            else:
-                for section in sections:
-                    if any(word.lower() in header.lower() for word in section.split()):
-                        current_section = section
-                        break
+            elif "Initial" in header or "Assessment" in header:
+                current_section = "Initial Assessment"
+            elif "Match" in header or "Analysis" in header:
+                current_section = "Match Analysis"
+            elif "Strategy" in header:
+                current_section = "Resume Strategy"
+            elif "Custom" in header or "Response" in header:
+                current_section = "Custom Responses"
+            elif "Follow" in header or "Action" in header:
+                current_section = "Follow-up Actions"
+            
             content_buffer = []
         else:
-            content_buffer.append(line)
+            if not started and line.strip():
+                # Handle content before first section header
+                content_buffer.append(line)
+            elif current_section:
+                content_buffer.append(line)
     
-    # Save last section
+    # Save the final section
     if current_section and current_section in sections:
-        sections[current_section] = '\n'.join(content_buffer)
+        sections[current_section] = '\n'.join(content_buffer).strip()
+    
+    # Debug output (can be removed in production)
+    st.write("Sections found:", list(sections.keys()))
+    if sections["Tailored Resume"]:
+        st.write("Tailored Resume preview:", sections["Tailored Resume"][:100] + "...")
     
     return sections
 
+def validate_claude_response(response: str) -> bool:
+    """
+    Validate that Claude's response contains all required sections
+    """
+    required_sections = [
+        "## Initial Assessment",
+        "## Match Analysis",
+        "## Resume Strategy",
+        "## Tailored Resume",
+    ]
+    
+    return all(section in response for section in required_sections)
+
 def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
     """
-    Display analysis content in organized tabs
+    Display analysis content with improved resume handling
     """
     tabs = st.tabs([
         "Initial Assessment",
@@ -255,15 +287,26 @@ def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
             st.markdown(sections["Resume Strategy"])
         with col2:
             st.markdown("### Tailored Resume")
-            if sections["Tailored Resume"]:
+            tailored_resume = sections["Tailored Resume"]
+            if tailored_resume:
+                # Clean up the resume content
+                cleaned_resume = tailored_resume.strip()
+                if not cleaned_resume.startswith('#'):
+                    cleaned_resume = "# " + cleaned_resume
+                
+                # Add download button
                 st.download_button(
                     "Download Tailored Resume",
-                    sections["Tailored Resume"],
+                    cleaned_resume,
                     file_name=f"tailored_resume_{unique_id}.md",
                     mime="text/markdown",
                     key=f"download_button_{unique_id}"
                 )
-                st.markdown(sections["Tailored Resume"])
+                
+                # Display the resume with proper formatting
+                st.markdown(cleaned_resume)
+            else:
+                st.warning("No tailored resume generated")
     
     with tabs[3]:
         st.markdown(sections["Custom Responses"])
