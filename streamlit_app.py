@@ -67,6 +67,40 @@ RESUME_TEMPLATE = """# [Full Name]
 ### [Degree]
 [Institution] | [Location] | *[Completion Date]*"""
 
+CLAUDE_PROMPT = """Please analyze this job application following a structured format:
+
+## Initial Assessment
+[Your assessment of the role, company, and requirements]
+
+## Match Analysis
+[Detailed analysis of matches and gaps]
+
+## Resume Strategy
+[Strategy for resume tailoring]
+
+## Tailored Resume
+[Complete tailored resume in markdown format]
+
+## Custom Responses
+[Responses to any custom questions]
+
+## Follow-up Actions
+[Recommended next steps]"""
+
+# Initialize session state
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+if 'clear_form' not in st.session_state:
+    st.session_state.clear_form = False
+if 'show_config' not in st.session_state:
+    st.session_state.show_config = False
+if 'custom_prompts' not in st.session_state:
+    st.session_state.custom_prompts = {
+        'analysis_instructions': ANALYSIS_INSTRUCTIONS,
+        'resume_template': RESUME_TEMPLATE,
+        'claude_prompt': CLAUDE_PROMPT
+    }
+
 # Database handling
 @contextmanager
 def get_connection():
@@ -237,12 +271,6 @@ def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
     with tabs[4]:
         st.markdown(sections["Follow-up Actions"])
 
-# Initialize session state
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-if 'clear_form' not in st.session_state:
-    st.session_state.clear_form = False
-
 def check_password():
     if not st.session_state.authenticated:
         col1, col2 = st.columns([1, 3])
@@ -297,10 +325,39 @@ if check_password():
         </div>
     """, unsafe_allow_html=True)
     
-    # Logout button in sidebar
-    if st.sidebar.button("Logout"):
-        st.session_state.authenticated = False
-        st.rerun()
+    # Configuration and Logout buttons in sidebar
+    st.sidebar.markdown("---")
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("⚙️ Configuration"):
+            st.session_state.show_config = not st.session_state.show_config
+    with col2:
+        if st.button("🚪 Logout"):
+            st.session_state.authenticated = False
+            st.rerun()
+    
+    # Configuration panel
+    if st.session_state.show_config:
+        with st.sidebar.expander("🎯 Analysis Instructions", expanded=True):
+            st.session_state.custom_prompts['analysis_instructions'] = st.text_area(
+                "Modify Analysis Instructions",
+                st.session_state.custom_prompts['analysis_instructions'],
+                height=300
+            )
+        
+        with st.sidebar.expander("📄 Resume Template", expanded=True):
+            st.session_state.custom_prompts['resume_template'] = st.text_area(
+                "Modify Resume Template",
+                st.session_state.custom_prompts['resume_template'],
+                height=300
+            )
+        
+        with st.sidebar.expander("🤖 Claude Prompt", expanded=True):
+            st.session_state.custom_prompts['claude_prompt'] = st.text_area(
+                "Modify Claude's Instructions",
+                st.session_state.custom_prompts['claude_prompt'],
+                height=300
+            )
     
     # Sidebar for resume management
     with st.sidebar:
@@ -308,7 +365,6 @@ if check_password():
         
         # Add new resume
         with st.expander("➕ Add New Resume"):
-            # Check if we need to clear the form
             if st.session_state.clear_form:
                 st.session_state.clear_form = False
                 st.rerun()
@@ -316,7 +372,6 @@ if check_password():
             resume_name = st.text_input("Resume Name", key="resume_name")
             upload_type = st.radio("Upload Type", ["File Upload", "Paste Text"])
             
-            # Track if we have content to save
             has_content = False
             resume_content = None
             file_type = None
@@ -343,16 +398,14 @@ if check_password():
                     has_content = True
                     file_type = 'text/plain'
             
-            # Show requirements and save button
             st.markdown("---")
             st.markdown("#### To save your resume:")
-            col1, col2 = st.columns([1, 2])
+            col1, col2 = st.columns(2)
             with col1:
                 st.markdown("✍️ Enter a resume name" + (" ✅" if resume_name else ""))
             with col2:
                 st.markdown("📄 Add resume content" + (" ✅" if has_content else ""))
             
-            # Save button with clear state indication
             save_button = st.button(
                 "💾 Save Resume",
                 disabled=not (resume_name and has_content),
@@ -364,7 +417,6 @@ if check_password():
                 if resume_name and has_content:
                     save_resume(resume_name, resume_content, file_type)
                     st.success(f"✅ Successfully saved resume: {resume_name}")
-                    # Set flag to clear form on next rerun
                     st.session_state.clear_form = True
                     st.rerun()
                 else:
