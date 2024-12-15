@@ -6,7 +6,4 @@ PyYAML
 PyPDF2
 python-docx
 docx2txt
-pdfkit==1.0.0
-wkhtmltopdf-pack==0.12.6
-markdown2==2.4.8
-jinja2==3.1.2
+reportlab==4.1.0
