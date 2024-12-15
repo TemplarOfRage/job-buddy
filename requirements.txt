@@ -3,3 +3,6 @@ anthropic
 python-dotenv
 streamlit-authenticator
 PyYAML
+PyPDF2
+python-docx
+docx2txt
