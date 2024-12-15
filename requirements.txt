@@ -6,4 +6,7 @@ PyYAML
 PyPDF2
 python-docx
 docx2txt
-fpdf2==2.7.8
+pdfkit==1.0.0
+wkhtmltopdf-pack==0.12.6
+markdown2==2.4.8
+jinja2==3.1.2
