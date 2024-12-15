@@ -10,6 +10,7 @@ import docx2txt
 from contextlib import contextmanager
 from typing import Dict, List, Tuple
 
+
 # Page configuration
 st.set_page_config(
     page_title="Job Buddy",
@@ -188,78 +189,36 @@ def get_analysis_history():
                     ORDER BY created_at DESC''')
         return c.fetchall()
 
-# Analysis helper functions
-def parse_claude_response(analysis: str) -> Dict[str, str]:
+def format_resume_for_export(resume_content: str) -> str:
     """
-    Parse Claude's response into structured sections with improved resume handling
+    Format resume content to be more copy-paste friendly
     """
-    sections = {
-        "Initial Assessment": "",
-        "Match Analysis": "",
-        "Resume Strategy": "",
-        "Tailored Resume": "",
-        "Custom Responses": "",
-        "Follow-up Actions": ""
-    }
+    # Normalize line endings
+    resume_content = resume_content.replace('\r\n', '\n').replace('\r', '\n')
     
-    current_section = ""
-    content_buffer = []
-    started = False
-    
-    for line in analysis.split('\n'):
-        if line.startswith('## '):
-            started = True
-            # Save previous section content
-            if current_section and current_section in sections:
-                sections[current_section] = '\n'.join(content_buffer).strip()
-            
-            # Extract section header
-            header = line.lstrip('#').strip()
-            
-            # Match section header to our expected sections
-            if "Resume" in header and "Tailored" in header:
-                current_section = "Tailored Resume"
-            elif "Initial" in header or "Assessment" in header:
-                current_section = "Initial Assessment"
-            elif "Match" in header or "Analysis" in header:
-                current_section = "Match Analysis"
-            elif "Strategy" in header:
-                current_section = "Resume Strategy"
-            elif "Custom" in header or "Response" in header:
-                current_section = "Custom Responses"
-            elif "Follow" in header or "Action" in header:
-                current_section = "Follow-up Actions"
-            
-            content_buffer = []
+    # Add proper spacing around headers and sections
+    lines = resume_content.split('\n')
+    formatted_lines = []
+    for i, line in enumerate(lines):
+        # Add extra space before headers
+        if line.startswith('#'):
+            if i > 0 and not lines[i-1].isspace() and not lines[i-1] == '':
+                formatted_lines.append('')
+            formatted_lines.append(line)
+            formatted_lines.append('')  # Add space after header
+        # Add space before bullet points if there isn't one
+        elif line.strip().startswith('- '):
+            if i > 0 and not lines[i-1].isspace() and not lines[i-1].startswith('- '):
+                formatted_lines.append('')
+            formatted_lines.append(line)
         else:
-            if not started and line.strip():
-                # Handle content before first section header
-                content_buffer.append(line)
-            elif current_section:
-                content_buffer.append(line)
+            formatted_lines.append(line)
     
-    # Save the final section
-    if current_section and current_section in sections:
-        sections[current_section] = '\n'.join(content_buffer).strip()
-    
-    return sections
-
-def validate_claude_response(response: str) -> bool:
-    """
-    Validate that Claude's response contains all required sections
-    """
-    required_sections = [
-        "## Initial Assessment",
-        "## Match Analysis",
-        "## Resume Strategy",
-        "## Tailored Resume",
-    ]
-    
-    return all(section in response for section in required_sections)
+    return '\n'.join(formatted_lines)
 
 def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
     """
-    Display analysis content in organized tabs
+    Display analysis content with improved resume formatting
     """
     tabs = st.tabs([
         "Initial Assessment",
@@ -284,22 +243,79 @@ def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
             st.markdown("### Tailored Resume")
             tailored_resume = sections["Tailored Resume"]
             if tailored_resume:
-                # Clean up the resume content
-                cleaned_resume = tailored_resume.strip()
-                if not cleaned_resume.startswith('#'):
-                    cleaned_resume = "# " + cleaned_resume
+                # Format the resume content
+                formatted_resume = format_resume_for_export(tailored_resume)
                 
-                # Add download button
-                st.download_button(
-                    "Download Tailored Resume",
-                    cleaned_resume,
-                    file_name=f"tailored_resume_{unique_id}.md",
-                    mime="text/markdown",
-                    key=f"download_button_{unique_id}"
-                )
+                # Create styled container for resume display
+                st.markdown("""
+                    <style>
+                        .resume-container {
+                            font-family: Arial, sans-serif;
+                            line-height: 1.5;
+                            padding: 20px;
+                            background: white;
+                            border: 1px solid #ddd;
+                            border-radius: 4px;
+                            margin: 10px 0;
+                        }
+                        .resume-container h1 { 
+                            font-size: 1.5em; 
+                            margin: 0.5em 0;
+                            border-bottom: 1px solid #ddd;
+                            padding-bottom: 0.3em;
+                        }
+                        .resume-container h2 { 
+                            font-size: 1.3em; 
+                            margin: 1em 0 0.5em 0;
+                            color: #2c5282;
+                        }
+                        .resume-container h3 { 
+                            font-size: 1.1em; 
+                            margin: 0.8em 0 0.3em 0;
+                            color: #2d3748;
+                        }
+                        .resume-container ul { 
+                            margin: 0.5em 0; 
+                            padding-left: 1.5em;
+                        }
+                        .resume-container li { 
+                            margin: 0.3em 0;
+                        }
+                    </style>
+                """, unsafe_allow_html=True)
                 
-                # Display the resume with proper formatting
-                st.markdown(cleaned_resume)
+                # Download buttons
+                col_download, col_copy = st.columns(2)
+                with col_download:
+                    st.download_button(
+                        "📄 Download Resume (Markdown)",
+                        formatted_resume,
+                        file_name=f"tailored_resume_{unique_id}.md",
+                        mime="text/markdown",
+                        key=f"download_button_{unique_id}",
+                        help="Download as Markdown format for easy editing"
+                    )
+                with col_copy:
+                    if st.button("📋 Copy to Clipboard", 
+                               key=f"copy_button_{unique_id}",
+                               help="Copy formatted resume to clipboard"):
+                        st.session_state['clipboard'] = formatted_resume
+                        st.success("Resume copied to clipboard!")
+                
+                # Display formatted resume
+                st.markdown(f'<div class="resume-container">{formatted_resume}</div>', 
+                          unsafe_allow_html=True)
+                
+                # Add tips for usage
+                with st.expander("📝 Resume Usage Tips"):
+                    st.markdown("""
+                        1. Use the **Download** button to save as Markdown
+                        2. Copy the content and paste into:
+                           - Google Docs
+                           - Microsoft Word
+                           - Any text editor
+                        3. The formatting is optimized for clean copy/paste
+                    """)
             else:
                 st.warning("No tailored resume generated")
     
