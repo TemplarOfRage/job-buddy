@@ -10,7 +10,6 @@ import docx2txt
 from contextlib import contextmanager
 from typing import Dict, List, Tuple
 
-
 # Page configuration
 st.set_page_config(
     page_title="Job Buddy",
@@ -189,6 +188,7 @@ def get_analysis_history():
                     ORDER BY created_at DESC''')
         return c.fetchall()
 
+# Analysis helper functions
 def format_resume_for_export(resume_content: str) -> str:
     """
     Format resume content to be more copy-paste friendly
@@ -215,6 +215,68 @@ def format_resume_for_export(resume_content: str) -> str:
             formatted_lines.append(line)
     
     return '\n'.join(formatted_lines)
+
+def parse_claude_response(analysis: str) -> Dict[str, str]:
+    """
+    Parse Claude's response into structured sections
+    """
+    sections = {
+        "Initial Assessment": "",
+        "Match Analysis": "",
+        "Resume Strategy": "",
+        "Tailored Resume": "",
+        "Custom Responses": "",
+        "Follow-up Actions": ""
+    }
+    
+    current_section = ""
+    content_buffer = []
+    
+    for line in analysis.split('\n'):
+        if line.startswith('## '):
+            # Save previous section
+            if current_section and current_section in sections:
+                sections[current_section] = '\n'.join(content_buffer).strip()
+            
+            # Extract section header
+            header = line.lstrip('#').strip()
+            
+            # Match section header to our expected sections
+            if "Resume" in header and "Tailored" in header:
+                current_section = "Tailored Resume"
+            elif "Initial" in header or "Assessment" in header:
+                current_section = "Initial Assessment"
+            elif "Match" in header or "Analysis" in header:
+                current_section = "Match Analysis"
+            elif "Strategy" in header:
+                current_section = "Resume Strategy"
+            elif "Custom" in header or "Response" in header:
+                current_section = "Custom Responses"
+            elif "Follow" in header or "Action" in header:
+                current_section = "Follow-up Actions"
+            
+            content_buffer = []
+        else:
+            content_buffer.append(line)
+    
+    # Save the final section
+    if current_section and current_section in sections:
+        sections[current_section] = '\n'.join(content_buffer).strip()
+    
+    return sections
+
+def validate_claude_response(response: str) -> bool:
+    """
+    Validate that Claude's response contains all required sections
+    """
+    required_sections = [
+        "## Initial Assessment",
+        "## Match Analysis",
+        "## Resume Strategy",
+        "## Tailored Resume",
+    ]
+    
+    return all(section in response for section in required_sections)
 
 def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
     """
@@ -389,7 +451,7 @@ if check_password():
         if st.button("🚪 Logout"):
             st.session_state.authenticated = False
             st.rerun()
-    
+            
     # Configuration panel
     if st.session_state.show_config:
         with st.sidebar.expander("🎯 Analysis Instructions", expanded=True):
