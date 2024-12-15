@@ -446,4 +446,17 @@ Remember to:
                         import traceback
                         st.code(traceback.format_exc())
             else:
-                st.info
+             st.error("Please provide both a job posting and select a resume")
+
+    with col2:
+        st.header("📚 Analysis History")
+        history = get_analysis_history()
+        
+        if history:
+            for i, (job_post, resume_name, analysis, timestamp) in enumerate(history):
+                with st.expander(f"Analysis {len(history)-i}: {timestamp}"):
+                    st.write(f"Resume used: {resume_name}")
+                    sections = parse_claude_response(analysis)
+                    display_analysis_content(sections, f"history_{i}")
+        else:
+            st.info("Your analysis history will appear here")
