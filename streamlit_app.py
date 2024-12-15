@@ -242,11 +242,6 @@ def parse_claude_response(analysis: str) -> Dict[str, str]:
     if current_section and current_section in sections:
         sections[current_section] = '\n'.join(content_buffer).strip()
     
-    # Debug output (can be removed in production)
-    st.write("Sections found:", list(sections.keys()))
-    if sections["Tailored Resume"]:
-        st.write("Tailored Resume preview:", sections["Tailored Resume"][:100] + "...")
-    
     return sections
 
 def validate_claude_response(response: str) -> bool:
@@ -264,7 +259,7 @@ def validate_claude_response(response: str) -> bool:
 
 def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
     """
-    Display analysis content with improved resume handling
+    Display analysis content in organized tabs
     """
     tabs = st.tabs([
         "Initial Assessment",
@@ -452,8 +447,7 @@ if check_password():
             save_button = st.button(
                 "💾 Save Resume",
                 disabled=not (resume_name and has_content),
-                help="Both resume name and content are required to save",
-                type="primary"
+                help="Both resume name and content are required to save",type="primary"
             )
             
             if save_button:
@@ -499,7 +493,7 @@ if check_password():
         
         custom_questions = st.text_area("Any custom application questions? (Optional)", height=100)
 
-        if st.button("🎯 Craft My Application Package"):
+        if st.button("🎯 Craft My Application Package", type="primary"):
             if selected_resume and job_post:
                 with st.spinner("Analyzing your fit for this role & building your application package..."):
                     try:
@@ -541,26 +535,19 @@ Remember to:
                             messages=[{"role": "user", "content": prompt}]
                         )
                         
-                        # Debug output
-                        with st.expander("📊 Analysis Results", expanded=True):
-                            st.subheader("Raw Response Data")
-                            st.write("Response object type:", type(message))
-                            st.write("Content type:", type(message.content))
-                            st.write("Full response object:", message)
-                            st.write("Content:", message.content)
-                            if hasattr(message.content[0], 'text'):
-                                st.markdown("### Claude's Response:")
-                                st.markdown(message.content[0].text)
-                        
                         # Extract the content from the message response
                         analysis = message.content[0].text
                         
-                        # Parse and display the response
-                        sections = parse_claude_response(analysis)
-                        display_analysis_content(sections, "main")
-                        
-                        # Save analysis to history
-                        save_analysis(job_post, selected_resume, analysis)
+                        # Validate the response
+                        if validate_claude_response(analysis):
+                            # Parse and display the response
+                            sections = parse_claude_response(analysis)
+                            display_analysis_content(sections, "main")
+                            
+                            # Save analysis to history
+                            save_analysis(job_post, selected_resume, analysis)
+                        else:
+                            st.error("Failed to generate a complete analysis. Please try again.")
                         
                     except Exception as e:
                         st.error(f"An error occurred during analysis: {str(e)}")
@@ -568,7 +555,7 @@ Remember to:
                         import traceback
                         st.code(traceback.format_exc())
             else:
-             st.error("Please provide both a job posting and select a resume")
+                st.error("Please provide both a job posting and select a resume")
 
     with col2:
         st.header("📚 Analysis History")
