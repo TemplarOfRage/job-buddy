@@ -7,6 +7,7 @@ from pathlib import Path
 import PyPDF2
 import io
 import docx2txt
+from contextlib import contextmanager
 
 # Page configuration
 st.set_page_config(
@@ -15,7 +16,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom analysis instructions based on your requirements
+# Constants
 ANALYSIS_INSTRUCTIONS = """# Job Application Analysis Process
 
 1. Initial Assessment
@@ -65,7 +66,37 @@ RESUME_TEMPLATE = """# [Full Name]
 ### [Degree]
 [Institution] | [Location] | *[Completion Date]*"""
 
-# Function to extract text from PDF
+# Database handling
+@contextmanager
+def get_connection():
+    """Thread-safe database connection context manager"""
+    conn = sqlite3.connect('job_buddy.db', check_same_thread=False)
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+def init_db():
+    """Initialize database tables"""
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute('''CREATE TABLE IF NOT EXISTS resumes
+                     (name TEXT PRIMARY KEY, 
+                      content TEXT, 
+                      file_type TEXT,
+                      created_at TIMESTAMP)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS analysis_history
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      job_post TEXT,
+                      resume_name TEXT,
+                      analysis TEXT,
+                      created_at TIMESTAMP)''')
+        conn.commit()
+
+# Initialize database
+init_db()
+
+# File processing functions
 def extract_text_from_pdf(pdf_file):
     try:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
@@ -77,7 +108,6 @@ def extract_text_from_pdf(pdf_file):
         st.error(f"Error reading PDF: {str(e)}")
         return None
 
-# Function to extract text from DOCX
 def extract_text_from_docx(docx_file):
     try:
         text = docx2txt.process(docx_file)
@@ -86,34 +116,42 @@ def extract_text_from_docx(docx_file):
         st.error(f"Error reading DOCX: {str(e)}")
         return None
 
-# Initialize connection to SQLite db
-@st.cache_resource
-def init_connection():
-    # Using st.secrets to get the database URL from Streamlit Cloud
-    db_path = st.secrets.get("DATABASE_URL", "sqlite:///job_buddy.db")
-    if db_path.startswith("sqlite:///"):
-        db_path = db_path[10:]
-    return sqlite3.connect(db_path)
+# Database operations
+def save_resume(name, content, file_type):
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute('INSERT OR REPLACE INTO resumes VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
+                 (name, content, file_type))
+        conn.commit()
 
-conn = init_connection()
+def get_resumes():
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute('SELECT name, content, file_type FROM resumes')
+        return dict((name, (content, file_type)) for name, content, file_type in c.fetchall())
 
-# Initialize database tables
-def init_db():
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS resumes
-                 (name TEXT PRIMARY KEY, 
-                  content TEXT, 
-                  file_type TEXT,
-                  created_at TIMESTAMP)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS analysis_history
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  job_post TEXT,
-                  resume_name TEXT,
-                  analysis TEXT,
-                  created_at TIMESTAMP)''')
-    conn.commit()
+def delete_resume(name):
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute('DELETE FROM resumes WHERE name = ?', (name,))
+        conn.commit()
 
-init_db()
+def save_analysis(job_post, resume_name, analysis):
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute('''INSERT INTO analysis_history 
+                     (job_post, resume_name, analysis, created_at)
+                     VALUES (?, ?, ?, CURRENT_TIMESTAMP)''',
+                 (job_post, resume_name, analysis))
+        conn.commit()
+
+def get_analysis_history():
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute('''SELECT job_post, resume_name, analysis, created_at 
+                    FROM analysis_history 
+                    ORDER BY created_at DESC''')
+        return c.fetchall()
 
 # Initialize session state
 if 'authenticated' not in st.session_state:
@@ -175,26 +213,18 @@ if check_password():
                     
                     if resume_content:
                         if st.button("Save Resume"):
-                            c = conn.cursor()
-                            c.execute('INSERT OR REPLACE INTO resumes VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
-                                    (resume_name, resume_content, file_type))
-                            conn.commit()
+                            save_resume(resume_name, resume_content, file_type)
                             st.success(f"Saved resume: {resume_name}")
                             st.rerun()
             else:
                 resume_content = st.text_area("Paste your resume here")
                 if st.button("Save Resume") and resume_name and resume_content:
-                    c = conn.cursor()
-                    c.execute('INSERT OR REPLACE INTO resumes VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
-                            (resume_name, resume_content, 'text/plain'))
-                    conn.commit()
+                    save_resume(resume_name, resume_content, 'text/plain')
                     st.success(f"Saved resume: {resume_name}")
                     st.rerun()
         
         # Display existing resumes
-        c = conn.cursor()
-        c.execute('SELECT name, content, file_type FROM resumes')
-        resumes = dict((name, (content, file_type)) for name, content, file_type in c.fetchall())
+        resumes = get_resumes()
         
         if resumes:
             st.subheader("Saved Resumes")
@@ -202,9 +232,7 @@ if check_password():
                 with st.expander(f"📄 {name}"):
                     st.text_area("Resume Content", content, height=200, key=f"resume_{name}")
                     if st.button(f"Delete {name}"):
-                        c = conn.cursor()
-                        c.execute('DELETE FROM resumes WHERE name = ?', (name,))
-                        conn.commit()
+                        delete_resume(name)
                         st.rerun()
 
     # Main content area
@@ -264,12 +292,7 @@ Format your response with clear markdown headers and ensure each section is thor
                         analysis = message.content
                         
                         # Save analysis to history
-                        c = conn.cursor()
-                        c.execute('''INSERT INTO analysis_history 
-                                   (job_post, resume_name, analysis, created_at)
-                                   VALUES (?, ?, ?, CURRENT_TIMESTAMP)''',
-                                (job_post, selected_resume, analysis))
-                        conn.commit()
+                        save_analysis(job_post, selected_resume, analysis)
                         
                         # Create tabs for organized analysis display
                         tabs = st.tabs([
@@ -296,11 +319,7 @@ Format your response with clear markdown headers and ensure each section is thor
 
     with col2:
         st.header("📚 Analysis History")
-        c = conn.cursor()
-        c.execute('''SELECT job_post, resume_name, analysis, created_at 
-                    FROM analysis_history 
-                    ORDER BY created_at DESC''')
-        history = c.fetchall()
+        history = get_analysis_history()
         
         if history:
             for i, (job_post, resume_name, analysis, timestamp) in enumerate(history):
