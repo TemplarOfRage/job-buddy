@@ -249,23 +249,21 @@ def main():
                                         label_visibility="collapsed")
         
         # Process files immediately on upload
-        if uploaded_files and 'last_uploaded' not in st.session_state:
-            st.session_state.last_uploaded = []
+        if uploaded_files:
             for file in uploaded_files:
                 file_name = file.name.rsplit('.', 1)[0]
-                if file_name not in st.session_state.last_uploaded:
-                    file_type = file.type
-                    if file_type == "application/pdf":
-                        resume_content = extract_text_from_pdf(file)
-                    elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                        resume_content = extract_text_from_docx(file)
-                    else:
-                        resume_content = file.getvalue().decode()
-                        
-                    if resume_content:
-                        save_resume(st.session_state.user_id, file_name, resume_content, file_type)
-                        st.toast(f"Resume saved: {file_name}", icon="✅")
-                        st.session_state.last_uploaded.append(file_name)
+                file_type = file.type
+                if file_type == "application/pdf":
+                    resume_content = extract_text_from_pdf(file)
+                elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                    resume_content = extract_text_from_docx(file)
+                else:
+                    resume_content = file.getvalue().decode()
+                    
+                if resume_content:
+                    save_resume(st.session_state.user_id, file_name, resume_content, file_type)
+                    st.toast(f"Resume saved: {file_name}", icon="✅")
+                    st.rerun()
         
         # Display user's resumes in table format
         st.divider()
