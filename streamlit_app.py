@@ -242,20 +242,17 @@ def main():
     with st.sidebar:
         st.header("My Resumes")
         
-        # Upload handler with refresh control
-        if 'uploaded_files' not in st.session_state:
-            st.session_state.uploaded_files = set()
-            
+        # Upload handler
         uploaded_files = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'], 
                                         key="resume_uploader", 
                                         accept_multiple_files=True, 
                                         label_visibility="collapsed")
         
-        # Process files only if new ones are detected
         if uploaded_files:
             current_files = {f.name for f in uploaded_files}
-            new_files = current_files - st.session_state.uploaded_files
+            saved_files = {name for name, _, _ in get_user_resumes(st.session_state.user_id)}
             
+            new_files = current_files - saved_files
             if new_files:
                 for file in uploaded_files:
                     if file.name in new_files:
@@ -271,10 +268,7 @@ def main():
                             
                         if resume_content:
                             save_resume(st.session_state.user_id, file_name, resume_content, file_type)
-                            st.toast(f"Resume saved: {file_name}", icon="✅")
-                
-                st.session_state.uploaded_files = current_files
-                st.rerun()
+                            st.toast(f"Resume saved: {file_name}", icon="✅", duration=3)
         
         # Display user's resumes in table format
         st.divider()
