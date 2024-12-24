@@ -274,6 +274,7 @@ def main():
                 st.text_area("Content", content, height=300, key=f"preview_{name}")
                 if st.button("Close Preview"):
                     del st.session_state.selected_resume
+                    st.rerun()
         
         if st.button("🚪 Logout"):
             del st.session_state.user_id
