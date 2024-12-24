@@ -278,11 +278,18 @@ def main():
                 cols[0].markdown(f"<div title='{name}'>{display_name}</div>", unsafe_allow_html=True)
                 if cols[1].button("👁️", key=f"view_{name}"):
                     st.session_state.selected_resume = name
+                # Delete button with callback
                 if cols[2].button("❌", key=f"delete_{name}", help=f"Delete {name}"):
-                    if delete_resume(st.session_state.user_id, name):
-                        if 'selected_resume' in st.session_state and st.session_state.selected_resume == name:
-                            del st.session_state.selected_resume
-                        st.experimental_rerun()
+                    st.session_state[f'delete_{name}'] = True
+                    st.rerun()
+                
+                # Handle delete callback
+                if st.session_state.get(f'delete_{name}', False):
+                    delete_resume(st.session_state.user_id, name)
+                    del st.session_state[f'delete_{name}']
+                    if 'selected_resume' in st.session_state and st.session_state.selected_resume == name:
+                        del st.session_state.selected_resume
+                    st.experimental_rerun()
         
         # Preview panel
         if 'selected_resume' in st.session_state:
