@@ -259,18 +259,25 @@ def main():
                 save_resume(st.session_state.user_id, file_name, resume_content, file_type)
                 st.success(f"✅ {file_name} saved")
         
-        # Display user's resumes
+        # Display user's resumes in table format
         st.divider()
         st.subheader("Saved Resumes")
         
-        # Create two columns for the resume list
-        for name, content, file_type in get_user_resumes(st.session_state.user_id):
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                if st.button(f"📄 {name}", key=f"view_{name}"):
+        resumes = get_user_resumes(st.session_state.user_id)
+        if resumes:
+            col_headers = st.columns([3, 1, 1])
+            col_headers[0].write("**Name**")
+            col_headers[1].write("**View**")
+            col_headers[2].write("**Delete**")
+            
+            for name, content, file_type in resumes:
+                cols = st.columns([3, 1, 1])
+                # Truncate name if longer than 30 chars
+                display_name = name if len(name) <= 30 else name[:27] + "..."
+                cols[0].markdown(f"<div title='{name}'>{display_name}</div>", unsafe_allow_html=True)
+                if cols[1].button("👁️", key=f"view_{name}"):
                     st.session_state.selected_resume = name
-            with col2:
-                if st.button("❌", key=f"delete_{name}"):
+                if cols[2].button("❌", key=f"delete_{name}"):
                     delete_resume(st.session_state.user_id, name)
                     if 'selected_resume' in st.session_state and st.session_state.selected_resume == name:
                         del st.session_state.selected_resume
