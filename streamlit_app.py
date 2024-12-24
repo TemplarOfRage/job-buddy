@@ -241,14 +241,15 @@ def main():
     # Sidebar for resume management
     with st.sidebar:
         st.header("My Resumes")
-        uploaded_file = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'], key="resume_uploader", accept_multiple_files=True)
         
-        if uploaded_file:
-            for file in uploaded_file:
+        # Upload handler
+        uploaded_files = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'], key="resume_uploader", accept_multiple_files=True, label_visibility="collapsed")
+        
+        if uploaded_files:
+            for file in uploaded_files:
                 file_name = file.name.rsplit('.', 1)[0]
                 file_type = file.type
                 
-                # Auto-save the file
                 if file_type == "application/pdf":
                     resume_content = extract_text_from_pdf(file)
                 elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
@@ -258,7 +259,10 @@ def main():
                     
                 if resume_content:
                     save_resume(st.session_state.user_id, file_name, resume_content, file_type)
-                    st.success(f"✅ {file_name} saved")
+                    # Reset file uploader
+                    st.session_state["resume_uploader"] = None
+                    st.toast(f"Resume saved: {file_name}", icon="✅")
+                    st.rerun()
         
         # Display user's resumes in table format
         st.divider()
