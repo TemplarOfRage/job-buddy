@@ -243,7 +243,10 @@ def main():
         st.header("My Resumes")
         
         # Upload handler
-        uploaded_files = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'], key="resume_uploader", accept_multiple_files=True, label_visibility="collapsed")
+        uploaded_files = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'], 
+                                        key="resume_uploader", 
+                                        accept_multiple_files=True, 
+                                        label_visibility="collapsed")
         
         if uploaded_files:
             for file in uploaded_files:
@@ -259,10 +262,7 @@ def main():
                     
                 if resume_content:
                     save_resume(st.session_state.user_id, file_name, resume_content, file_type)
-                    # Reset file uploader
-                    st.session_state["resume_uploader"] = None
                     st.toast(f"Resume saved: {file_name}", icon="✅")
-                    st.rerun()
         
         # Display user's resumes in table format
         st.divider()
