@@ -31,6 +31,10 @@ def get_connection():
 def init_db():
     with get_connection() as conn:
         c = conn.cursor()
+        # Drop existing tables if they exist
+        c.execute('DROP TABLE IF EXISTS analysis_history')
+        c.execute('DROP TABLE IF EXISTS resumes')
+        c.execute('DROP TABLE IF EXISTS users')
         # Users table
         c.execute('''CREATE TABLE IF NOT EXISTS users
                      (id TEXT PRIMARY KEY,
