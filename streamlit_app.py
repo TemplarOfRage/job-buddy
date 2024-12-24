@@ -163,6 +163,14 @@ def get_user_analysis_history(user_id: str) -> List[Tuple[str, str, datetime]]:
 # Authentication check
 def check_authentication():
     if 'user_id' not in st.session_state:
+        # Check if default admin exists
+        with get_connection() as conn:
+            c = conn.cursor()
+            c.execute('SELECT id FROM users WHERE username = ?', (st.secrets["USERNAME"],))
+            if not c.fetchone():
+                # Create default admin user
+                create_user(st.secrets["USERNAME"], st.secrets["PASSWORD"])
+        
         col1, col2 = st.columns([1, 3])
         
         with col1:
