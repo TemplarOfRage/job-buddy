@@ -242,27 +242,30 @@ def main():
     with st.sidebar:
         st.header("My Resumes")
         
-        # Upload handler
-        uploaded_files = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'], 
-                                        key="resume_uploader", 
-                                        accept_multiple_files=True, 
-                                        label_visibility="collapsed")
-        
-        if uploaded_files:
-            for file in uploaded_files:
-                file_name = file.name.rsplit('.', 1)[0]
-                file_type = file.type
-                
-                if file_type == "application/pdf":
-                    resume_content = extract_text_from_pdf(file)
-                elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                    resume_content = extract_text_from_docx(file)
-                else:
-                    resume_content = file.getvalue().decode()
+        # Create a form for file upload
+        with st.form("resume_upload_form"):
+            uploaded_files = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'], 
+                                            key="resume_uploader", 
+                                            accept_multiple_files=True, 
+                                            label_visibility="collapsed")
+            submitted = st.form_submit_button("Save Resumes")
+            
+            if submitted and uploaded_files:
+                for file in uploaded_files:
+                    file_name = file.name.rsplit('.', 1)[0]
+                    file_type = file.type
                     
-                if resume_content:
-                    save_resume(st.session_state.user_id, file_name, resume_content, file_type)
-                    st.toast(f"Resume saved: {file_name}", icon="✅")
+                    if file_type == "application/pdf":
+                        resume_content = extract_text_from_pdf(file)
+                    elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                        resume_content = extract_text_from_docx(file)
+                    else:
+                        resume_content = file.getvalue().decode()
+                        
+                    if resume_content:
+                        save_resume(st.session_state.user_id, file_name, resume_content, file_type)
+                        st.toast(f"Resume saved: {file_name}", icon="✅")
+                st.rerun()
         
         # Display user's resumes in table format
         st.divider()
