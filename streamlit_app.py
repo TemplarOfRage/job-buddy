@@ -287,7 +287,7 @@ def main():
                     delete_resume(st.session_state.user_id, name)
                     if 'selected_resume' in st.session_state and st.session_state.selected_resume == name:
                         del st.session_state.selected_resume
-                    st.experimental_rerun()
+                    st.rerun()
         
         # Preview panel
         if 'selected_resume' in st.session_state:
