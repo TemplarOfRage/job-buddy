@@ -276,17 +276,15 @@ def main():
                 # Truncate name if longer than 30 chars
                 display_name = name if len(name) <= 30 else name[:27] + "..."
                 cols[0].markdown(f"<div title='{name}'>{display_name}</div>", unsafe_allow_html=True)
-                if cols[1].button("👁️", key=f"view_{name}"):
-                    st.session_state.selected_resume = name
-                # Delete button with callback
-                if cols[2].button("❌", key=f"delete_{name}", help=f"Delete {name}"):
-                    st.session_state[f'delete_{name}'] = True
-                    st.rerun()
                 
-                # Handle delete callback
-                if st.session_state.get(f'delete_{name}', False):
+                view_key = f"view_{name}_{hash(name)}"
+                delete_key = f"delete_{name}_{hash(name)}"
+                
+                if cols[1].button("👁️", key=view_key):
+                    st.session_state.selected_resume = name
+                    
+                if cols[2].button("❌", key=delete_key):
                     delete_resume(st.session_state.user_id, name)
-                    del st.session_state[f'delete_{name}']
                     if 'selected_resume' in st.session_state and st.session_state.selected_resume == name:
                         del st.session_state.selected_resume
                     st.experimental_rerun()
