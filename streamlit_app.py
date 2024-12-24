@@ -241,23 +241,24 @@ def main():
     # Sidebar for resume management
     with st.sidebar:
         st.header("My Resumes")
-        uploaded_file = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'], key="resume_uploader")
+        uploaded_file = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'], key="resume_uploader", accept_multiple_files=True)
         
         if uploaded_file:
-            file_name = uploaded_file.name.rsplit('.', 1)[0]
-            file_type = uploaded_file.type
-            
-            # Auto-save the file
-            if file_type == "application/pdf":
-                resume_content = extract_text_from_pdf(uploaded_file)
-            elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                resume_content = extract_text_from_docx(uploaded_file)
-            else:
-                resume_content = uploaded_file.getvalue().decode()
+            for file in uploaded_file:
+                file_name = file.name.rsplit('.', 1)[0]
+                file_type = file.type
                 
-            if resume_content:
-                save_resume(st.session_state.user_id, file_name, resume_content, file_type)
-                st.success(f"✅ {file_name} saved")
+                # Auto-save the file
+                if file_type == "application/pdf":
+                    resume_content = extract_text_from_pdf(file)
+                elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                    resume_content = extract_text_from_docx(file)
+                else:
+                    resume_content = file.getvalue().decode()
+                    
+                if resume_content:
+                    save_resume(st.session_state.user_id, file_name, resume_content, file_type)
+                    st.success(f"✅ {file_name} saved")
         
         # Display user's resumes in table format
         st.divider()
@@ -277,11 +278,11 @@ def main():
                 cols[0].markdown(f"<div title='{name}'>{display_name}</div>", unsafe_allow_html=True)
                 if cols[1].button("👁️", key=f"view_{name}"):
                     st.session_state.selected_resume = name
-                if cols[2].button("❌", key=f"delete_{name}"):
-                    delete_resume(st.session_state.user_id, name)
-                    if 'selected_resume' in st.session_state and st.session_state.selected_resume == name:
-                        del st.session_state.selected_resume
-                    st.rerun()
+                if cols[2].button("❌", key=f"delete_{name}", help=f"Delete {name}"):
+                    if delete_resume(st.session_state.user_id, name):
+                        if 'selected_resume' in st.session_state and st.session_state.selected_resume == name:
+                            del st.session_state.selected_resume
+                        st.experimental_rerun()
         
         # Preview panel
         if 'selected_resume' in st.session_state:
