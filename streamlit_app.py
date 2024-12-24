@@ -7,6 +7,8 @@ from pathlib import Path
 import PyPDF2
 import io
 import docx2txt
+import bcrypt
+import uuid
 from contextlib import contextmanager
 from typing import Dict, List, Tuple
 
@@ -17,94 +19,9 @@ st.set_page_config(
     layout="wide"
 )
 
-# Constants
-ANALYSIS_INSTRUCTIONS = """# Job Application Analysis Process
-
-1. Initial Assessment
-   - Role Overview: Company, position, level, key focus areas
-   - Requirements Analysis: Must-haves vs. nice-to-haves
-   - Company Culture Assessment
-
-2. Match Analysis
-   - Strong Matches: Perfect fits from current experience (using only provided metrics)
-   - Solid Matches: Good matches needing minor reframing
-   - Gap Areas: Missing or weak matches
-   - Additional Context Needed: Areas where more information might help
-
-3. Resume Tailoring Strategy
-   - Format: Using provided resume template
-   - Content Adjustments: Keeping all quantitative metrics honest
-   - Highlighting Relevant Experience
-   - Gap Mitigation Strategies
-
-4. Custom Questions
-   - Personalized Response Strategy
-   - Writing Style Matching
-   - Professional Yet Authentic Tone
-   - Key Talking Points
-
-5. Follow-up Actions
-   - Additional Experience to Include
-   - Skills to Highlight
-   - Areas Needing Clarification"""
-
-RESUME_TEMPLATE = """# [Full Name]
-[City, State] | [Phone] | [Email]
-
-## Professional Experience
-
-### [Job Title] | [Company Name] | [Location]
-*[Date Range]*
-
-**[Category Header]**
-- [Achievement/Responsibility with metrics]
-- [Achievement/Responsibility with metrics]
-
-## Technical Skills
-- [Skill Category]: [List of skills]
-
-## Education
-### [Degree]
-[Institution] | [Location] | *[Completion Date]*"""
-
-CLAUDE_PROMPT = """Please analyze this job application following a structured format:
-
-## Initial Assessment
-[Your assessment of the role, company, and requirements]
-
-## Match Analysis
-[Detailed analysis of matches and gaps]
-
-## Resume Strategy
-[Strategy for resume tailoring]
-
-## Tailored Resume
-[Complete tailored resume in markdown format]
-
-## Custom Responses
-[Responses to any custom questions]
-
-## Follow-up Actions
-[Recommended next steps]"""
-
-# Initialize session state
-if 'authenticated' not in st.session_state:
-    st.session_state.authenticated = False
-if 'clear_form' not in st.session_state:
-    st.session_state.clear_form = False
-if 'show_config' not in st.session_state:
-    st.session_state.show_config = False
-if 'custom_prompts' not in st.session_state:
-    st.session_state.custom_prompts = {
-        'analysis_instructions': ANALYSIS_INSTRUCTIONS,
-        'resume_template': RESUME_TEMPLATE,
-        'claude_prompt': CLAUDE_PROMPT
-    }
-
 # Database handling
 @contextmanager
 def get_connection():
-    """Thread-safe database connection context manager"""
     conn = sqlite3.connect('job_buddy.db', check_same_thread=False)
     try:
         yield conn
@@ -112,378 +29,136 @@ def get_connection():
         conn.close()
 
 def init_db():
-    """Initialize database tables"""
     with get_connection() as conn:
         c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS resumes
-                     (name TEXT PRIMARY KEY, 
-                      content TEXT, 
-                      file_type TEXT,
+        # Users table
+        c.execute('''CREATE TABLE IF NOT EXISTS users
+                     (id TEXT PRIMARY KEY,
+                      username TEXT UNIQUE,
+                      password_hash TEXT,
                       created_at TIMESTAMP)''')
+        
+        # Resumes table with user association
+        c.execute('''CREATE TABLE IF NOT EXISTS resumes
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      user_id TEXT,
+                      name TEXT,
+                      content TEXT,
+                      file_type TEXT,
+                      created_at TIMESTAMP,
+                      FOREIGN KEY(user_id) REFERENCES users(id))''')
+        
+        # Analysis history with user association
         c.execute('''CREATE TABLE IF NOT EXISTS analysis_history
                      (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      user_id TEXT,
                       job_post TEXT,
-                      resume_name TEXT,
                       analysis TEXT,
-                      created_at TIMESTAMP)''')
+                      created_at TIMESTAMP,
+                      FOREIGN KEY(user_id) REFERENCES users(id))''')
+        
+        c.execute('CREATE INDEX IF NOT EXISTS idx_resumes_user_id ON resumes(user_id)')
+        c.execute('CREATE INDEX IF NOT EXISTS idx_analysis_user_id ON analysis_history(user_id)')
         conn.commit()
 
 # Initialize database
 init_db()
 
+# User Authentication
+def hash_password(password: str) -> bytes:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+def verify_password(password: str, hashed: bytes) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed)
+
+def create_user(username: str, password: str) -> str:
+    user_id = str(uuid.uuid4())
+    password_hash = hash_password(password)
+    
+    with get_connection() as conn:
+        c = conn.cursor()
+        try:
+            c.execute('''INSERT INTO users (id, username, password_hash, created_at)
+                        VALUES (?, ?, ?, CURRENT_TIMESTAMP)''',
+                     (user_id, username, password_hash))
+            conn.commit()
+            return user_id
+        except sqlite3.IntegrityError:
+            return None
+
+def authenticate_user(username: str, password: str) -> str:
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute('SELECT id, password_hash FROM users WHERE username = ?', (username,))
+        result = c.fetchone()
+        if result and verify_password(password, result[1]):
+            return result[0]
+    return None
+
 # File processing functions
-def extract_text_from_pdf(pdf_file):
+def extract_text_from_pdf(pdf_file) -> str:
     try:
         pdf_reader = PyPDF2.PdfReader(pdf_file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-        return text
+        return " ".join(page.extract_text() for page in pdf_reader.pages)
     except Exception as e:
         st.error(f"Error reading PDF: {str(e)}")
         return None
 
-def extract_text_from_docx(docx_file):
+def extract_text_from_docx(docx_file) -> str:
     try:
-        text = docx2txt.process(docx_file)
-        return text
+        return docx2txt.process(docx_file)
     except Exception as e:
         st.error(f"Error reading DOCX: {str(e)}")
         return None
 
-# Database operations
-def save_resume(name, content, file_type):
+# Resume operations
+def save_resume(user_id: str, name: str, content: str, file_type: str):
     with get_connection() as conn:
         c = conn.cursor()
-        c.execute('INSERT OR REPLACE INTO resumes VALUES (?, ?, ?, CURRENT_TIMESTAMP)',
-                 (name, content, file_type))
+        c.execute('''INSERT INTO resumes 
+                     (user_id, name, content, file_type, created_at)
+                     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)''',
+                 (user_id, name, content, file_type))
         conn.commit()
 
-def get_resumes():
+def get_user_resumes(user_id: str) -> List[Tuple[str, str, str]]:
     with get_connection() as conn:
         c = conn.cursor()
-        c.execute('SELECT name, content, file_type FROM resumes')
-        return dict((name, (content, file_type)) for name, content, file_type in c.fetchall())
+        c.execute('''SELECT name, content, file_type 
+                    FROM resumes 
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC''', (user_id,))
+        return c.fetchall()
 
-def delete_resume(name):
+def delete_resume(user_id: str, name: str):
     with get_connection() as conn:
         c = conn.cursor()
-        c.execute('DELETE FROM resumes WHERE name = ?', (name,))
+        c.execute('DELETE FROM resumes WHERE user_id = ? AND name = ?', 
+                 (user_id, name))
         conn.commit()
 
-def save_analysis(job_post, resume_name, analysis):
+# Analysis operations
+def save_analysis(user_id: str, job_post: str, analysis: str):
     with get_connection() as conn:
         c = conn.cursor()
         c.execute('''INSERT INTO analysis_history 
-                     (job_post, resume_name, analysis, created_at)
+                     (user_id, job_post, analysis, created_at)
                      VALUES (?, ?, ?, CURRENT_TIMESTAMP)''',
-                 (job_post, resume_name, analysis))
+                 (user_id, job_post, analysis))
         conn.commit()
 
-def get_analysis_history():
+def get_user_analysis_history(user_id: str) -> List[Tuple[str, str, datetime]]:
     with get_connection() as conn:
         c = conn.cursor()
-        c.execute('''SELECT job_post, resume_name, analysis, created_at 
+        c.execute('''SELECT job_post, analysis, created_at 
                     FROM analysis_history 
-                    ORDER BY created_at DESC''')
+                    WHERE user_id = ?
+                    ORDER BY created_at DESC''', (user_id,))
         return c.fetchall()
 
-# Analysis helper functions
-def format_resume_for_export(resume_content: str) -> str:
-    """
-    Format resume content to be more copy-paste friendly and properly formatted
-    """
-    # Remove 'markdown' text and backticks if they appear at the start
-    resume_content = resume_content.replace('markdown', '', 1).strip()
-    resume_content = resume_content.replace('```', '').strip()
-    
-    # Normalize line endings
-    resume_content = resume_content.replace('\r\n', '\n').replace('\r', '\n')
-    
-    # Add proper spacing around headers and sections
-    lines = resume_content.split('\n')
-    formatted_lines = []
-    
-    for i, line in enumerate(lines):
-        # Skip empty lines at the start
-        if i == 0 and not line.strip():
-            continue
-            
-        # Clean up any remaining backticks in the line
-        line = line.replace('```', '').strip()
-        
-        # Add extra space before headers
-        if line.startswith('#'):
-            if i > 0 and not lines[i-1].isspace() and not lines[i-1] == '':
-                formatted_lines.append('')
-            formatted_lines.append(line)
-            formatted_lines.append('')  # Add space after header
-            
-        # Format job entries
-        elif line.strip().startswith('###'):
-            formatted_lines.append(line)  # Job title
-            if i + 1 < len(lines) and not lines[i+1].startswith('*'):
-                formatted_lines.append('')  # Add space if date is missing
-                
-        # Format dates
-        elif line.strip().startswith('*') and line.strip().endswith('*'):
-            formatted_lines.append(line)
-            formatted_lines.append('')  # Add space after date
-            
-        # Format categories
-        elif line.strip().startswith('**'):
-            if i > 0 and not lines[i-1] == '':
-                formatted_lines.append('')
-            formatted_lines.append(line)
-            
-        # Format bullet points
-        elif line.strip().startswith('- '):
-            formatted_lines.append(line)
-            
-        else:
-            formatted_lines.append(line)
-    
-    # Final cleanup of any trailing/leading spaces
-    result = '\n'.join(formatted_lines).strip()
-    
-    # Ensure the result doesn't start with backticks or markdown
-    result = result.replace('```markdown', '').replace('```', '').strip()
-    
-    return result
-
-def parse_claude_response(analysis: str) -> Dict[str, str]:
-    """
-    Parse Claude's response into structured sections with improved resume handling
-    """
-    sections = {
-        "Initial Assessment": "",
-        "Match Analysis": "",
-        "Resume Strategy": "",
-        "Tailored Resume": "",
-        "Custom Responses": "",
-        "Follow-up Actions": ""
-    }
-    
-    current_section = ""
-    content_buffer = []
-    started = False
-    
-    for line in analysis.split('\n'):
-        if line.startswith('## '):
-            started = True
-            # Save previous section content
-            if current_section and current_section in sections:
-                sections[current_section] = '\n'.join(content_buffer).strip()
-            
-            # Extract section header
-            header = line.lstrip('#').strip()
-            
-            # Match section header to our expected sections
-            if "Resume" in header and "Tailored" in header:
-                current_section = "Tailored Resume"
-            elif "Initial" in header or "Assessment" in header:
-                current_section = "Initial Assessment"
-            elif "Match" in header or "Analysis" in header:
-                current_section = "Match Analysis"
-            elif "Strategy" in header:
-                current_section = "Resume Strategy"
-            elif "Custom" in header or "Response" in header:
-                current_section = "Custom Responses"
-            elif "Follow" in header or "Action" in header:
-                current_section = "Follow-up Actions"
-            
-            content_buffer = []
-        else:
-            if not started and line.strip():
-                # Handle content before first section header
-                content_buffer.append(line)
-            elif current_section:
-                content_buffer.append(line)
-    
-    # Save the final section
-    if current_section and current_section in sections:
-        sections[current_section] = '\n'.join(content_buffer).strip()
-    
-    # Clean up the resume section specifically
-    if sections["Tailored Resume"]:
-        sections["Tailored Resume"] = sections["Tailored Resume"].strip()
-        if sections["Tailored Resume"].lower().startswith('markdown'):
-            sections["Tailored Resume"] = sections["Tailored Resume"][8:].strip()
-    
-    return sections
-
-def validate_claude_response(response: str) -> bool:
-    """
-    Validate that Claude's response contains all required sections
-    """
-    required_sections = [
-        "## Initial Assessment",
-        "## Match Analysis",
-        "## Resume Strategy",
-        "## Tailored Resume",
-    ]
-    
-    return all(section in response for section in required_sections)
-
-def create_pdf_from_markdown(resume_content: str) -> bytes:
-    """
-    Convert markdown content to PDF using reportlab
-    """
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.pdfgen import canvas
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
-    from reportlab.lib.units import inch
-    import io
-
-    # Create buffer for PDF
-    buffer = io.BytesIO()
-    
-    # Create PDF document
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        rightMargin=72,
-        leftMargin=72,
-        topMargin=72,
-        bottomMargin=72
-    )
-
-    # Styles
-    styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(
-        name='Heading1',
-        parent=styles['Heading1'],
-        fontSize=16,
-        spaceAfter=20
-    ))
-    styles.add(ParagraphStyle(
-        name='Heading2',
-        parent=styles['Heading2'],
-        fontSize=14,
-        spaceAfter=15
-    ))
-    styles.add(ParagraphStyle(
-        name='Heading3',
-        parent=styles['Heading3'],
-        fontSize=12,
-        spaceAfter=10
-    ))
-    styles.add(ParagraphStyle(
-        name='BulletPoint',
-        parent=styles['Normal'],
-        fontSize=10,
-        leftIndent=20
-    ))
-
-    # Process markdown content
-    story = []
-    current_list_items = []
-    
-    for line in resume_content.split('\n'):
-        line = line.strip()
-        if not line:
-            if current_list_items:
-                story.append(ListFlowable(
-                    [ListItem(Paragraph(item, styles['BulletPoint'])) for item in current_list_items],
-                    bulletType='bullet',
-                    leftIndent=35,
-                    spaceAfter=10
-                ))
-                current_list_items = []
-            story.append(Spacer(1, 12))
-            continue
-
-        if line.startswith('# '):
-            story.append(Paragraph(line[2:], styles['Heading1']))
-        elif line.startswith('## '):
-            story.append(Paragraph(line[3:], styles['Heading2']))
-        elif line.startswith('### '):
-            story.append(Paragraph(line[4:], styles['Heading3']))
-        elif line.startswith('- '):
-            current_list_items.append(line[2:])
-        elif line.startswith('*') and line.endswith('*'):
-            story.append(Paragraph(line.strip('*'), styles['Italic']))
-        elif line.startswith('**') and line.endswith('**'):
-            story.append(Paragraph(line.strip('*'), styles['Bold']))
-        else:
-            story.append(Paragraph(line, styles['Normal']))
-
-    # Build PDF
-    doc.build(story)
-    
-    # Get the value from the buffer
-    pdf_value = buffer.getvalue()
-    buffer.close()
-    
-    return pdf_value
-
-def display_analysis_content(sections: Dict[str, str], unique_id: str = ""):
-    """
-    Display analysis content with improved resume formatting and PDF export
-    """
-    tabs = st.tabs([
-        "Initial Assessment",
-        "Match Analysis",
-        "Strategy & Resume",
-        "Custom Responses",
-        "Follow-up Actions"
-    ])
-    
-    with tabs[0]:
-        st.markdown(sections["Initial Assessment"])
-    
-    with tabs[1]:
-        st.markdown(sections["Match Analysis"])
-    
-    with tabs[2]:
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.markdown("### Strategy")
-            st.markdown(sections["Resume Strategy"])
-        with col2:
-            st.markdown("### Tailored Resume")
-            tailored_resume = sections["Tailored Resume"]
-            if tailored_resume:
-                # Format the resume content
-                formatted_resume = format_resume_for_export(tailored_resume)
-                
-                st.markdown("### Download Options")
-                
-                # Generate and offer PDF download
-                try:
-                    pdf_content = create_pdf_from_markdown(formatted_resume)
-                    if pdf_content:
-                        st.download_button(
-                            "📥 Download as PDF",
-                            pdf_content,
-                            file_name=f"tailored_resume_{unique_id}.pdf",
-                            mime="application/pdf",
-                            key=f"download_pdf_{unique_id}"
-                        )
-                except Exception as e:
-                    st.error("PDF generation is currently unavailable. Please use the copy option.")
-                
-                # Copy to clipboard button
-                if st.button("📋 Copy to Clipboard", key=f"copy_{unique_id}"):
-                    st.session_state['clipboard'] = formatted_resume
-                    st.success("Resume copied to clipboard!")
-                
-                # Display the formatted resume
-                st.markdown("### Preview")
-                st.markdown(formatted_resume)
-            else:
-                st.warning("No tailored resume generated")
-    
-    with tabs[3]:
-        st.markdown(sections["Custom Responses"])
-    
-    with tabs[4]:
-        st.markdown(sections["Follow-up Actions"])
-        
-def check_password():
-    if not st.session_state.authenticated:
+# Authentication check
+def check_authentication():
+    if 'user_id' not in st.session_state:
         col1, col2 = st.columns([1, 3])
         
         with col1:
@@ -491,16 +166,28 @@ def check_password():
             username = st.text_input("Username")
             password = st.text_input("Password", type="password")
             
-            if st.button("Login", type="primary"):
-                try:
-                    if (username == st.secrets["USERNAME"] and 
-                            password == st.secrets["PASSWORD"]):
-                        st.session_state.authenticated = True
+            col3, col4 = st.columns(2)
+            with col3:
+                if st.button("Login", type="primary"):
+                    user_id = authenticate_user(username, password)
+                    if user_id:
+                        st.session_state.user_id = user_id
                         st.rerun()
                     else:
-                        st.error("Invalid username or password")
-                except KeyError:
-                    st.error("Authentication credentials not properly configured")
+                        st.error("Invalid credentials")
+            
+            with col4:
+                if st.button("Register"):
+                    if username and password:
+                        user_id = create_user(username, password)
+                        if user_id:
+                            st.session_state.user_id = user_id
+                            st.success("Registration successful!")
+                            st.rerun()
+                        else:
+                            st.error("Username already exists")
+                    else:
+                        st.error("Please provide username and password")
         
         with col2:
             st.title("Welcome to Job Buddy")
@@ -510,16 +197,9 @@ def check_password():
                 Transform your job search with intelligent application analysis:
                 
                 🎯 **Smart Job Fit Analysis**  
-                Instantly analyze job postings against your resume
-                
                 ✨ **Custom Resume Tailoring**  
-                Get personalized resume optimization suggestions
-                
                 💡 **Strategic Insights**  
-                Receive detailed match analysis and action items
-                
                 📝 **Application Assistance**  
-                Get help with custom application questions
                 
                 Start your smarter job search today!
             """)
@@ -527,125 +207,48 @@ def check_password():
     return True
 
 # Main app
-if check_password():
-    # Header
-    st.markdown("""
-        <div style='text-align: center; padding: 1rem; background: linear-gradient(90deg, #2563eb, #1d4ed8); color: white; border-radius: 0.5rem; margin-bottom: 2rem;'>
-            <h1 style='font-size: 2rem; margin-bottom: 0.5rem;'>Job Buddy</h1>
-            <p style='font-size: 1rem; opacity: 0.9;'>Your AI-powered job application assistant</p>
-        </div>
-    """, unsafe_allow_html=True)
-    
-    # Configuration and Logout buttons in sidebar
-    st.sidebar.markdown("---")
-    col1, col2 = st.sidebar.columns(2)
-    with col1:
-        if st.button("⚙️ Configuration"):
-            st.session_state.show_config = not st.session_state.show_config
-    with col2:
-        if st.button("🚪 Logout"):
-            st.session_state.authenticated = False
-            st.rerun()
-            
-    # Configuration panel
-    if st.session_state.show_config:
-        with st.sidebar.expander("🎯 Analysis Instructions", expanded=True):
-            st.session_state.custom_prompts['analysis_instructions'] = st.text_area(
-                "Modify Analysis Instructions",
-                st.session_state.custom_prompts['analysis_instructions'],
-                height=300
-            )
+def main():
+    if not check_authentication():
+        return
         
-        with st.sidebar.expander("📄 Resume Template", expanded=True):
-            st.session_state.custom_prompts['resume_template'] = st.text_area(
-                "Modify Resume Template",
-                st.session_state.custom_prompts['resume_template'],
-                height=300
-            )
-        
-        with st.sidebar.expander("🤖 Claude Prompt", expanded=True):
-            st.session_state.custom_prompts['claude_prompt'] = st.text_area(
-                "Modify Claude's Instructions",
-                st.session_state.custom_prompts['claude_prompt'],
-                height=300
-            )
+    st.title("Job Buddy")
     
     # Sidebar for resume management
     with st.sidebar:
         st.header("My Resumes")
+        uploaded_file = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'])
         
-        # Add new resume
-        with st.expander("➕ Add New Resume"):
-            if st.session_state.clear_form:
-                st.session_state.clear_form = False
-                st.rerun()
+        if uploaded_file:
+            file_name = uploaded_file.name.rsplit('.', 1)[0]
             
-            resume_name = st.text_input("Resume Name", key="resume_name")
-            upload_type = st.radio("Upload Type", ["File Upload", "Paste Text"])
-            
-            has_content = False
-            resume_content = None
-            file_type = None
-            
-            if upload_type == "File Upload":
-                uploaded_file = st.file_uploader("Choose your resume file", type=['pdf', 'txt', 'docx'])
-                if uploaded_file is not None:
-                    file_type = uploaded_file.type
-                    if file_type == "application/pdf":
-                        resume_content = extract_text_from_pdf(uploaded_file)
-                    elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-                        resume_content = extract_text_from_docx(uploaded_file)
-                    else:  # txt files
-                        resume_content = uploaded_file.getvalue().decode()
-                    
-                    if resume_content:
-                        has_content = True
-                        st.success("✅ File uploaded successfully")
-                        st.markdown("### Preview:")
-                        st.text_area("Resume Content Preview", resume_content, height=100, disabled=True)
+            if uploaded_file.type == "application/pdf":
+                resume_content = extract_text_from_pdf(uploaded_file)
+            elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+                resume_content = extract_text_from_docx(uploaded_file)
             else:
-                resume_content = st.text_area("Paste your resume here", height=200)
-                if resume_content:
-                    has_content = True
-                    file_type = 'text/plain'
-            
-            st.markdown("---")
-            st.markdown("#### To save your resume:")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("✍️ Enter a resume name" + (" ✅" if resume_name else ""))
-            with col2:
-                st.markdown("📄 Add resume content" + (" ✅" if has_content else ""))
-            
-            save_button = st.button(
-                "💾 Save Resume",
-                disabled=not (resume_name and has_content),
-                help="Both resume name and content are required to save",type="primary"
-            )
-            
-            if save_button:
-                if resume_name and has_content:
-                    save_resume(resume_name, resume_content, file_type)
-                    st.success(f"✅ Successfully saved resume: {resume_name}")
-                    st.session_state.clear_form = True
+                resume_content = uploaded_file.getvalue().decode()
+                
+            if resume_content:
+                st.success("✅ File uploaded successfully")
+                if st.button("💾 Save Resume", type="primary"):
+                    save_resume(st.session_state.user_id, file_name, 
+                              resume_content, uploaded_file.type)
+                    st.success(f"✅ Saved: {file_name}")
                     st.rerun()
-                else:
-                    if not resume_name:
-                        st.error("Please enter a resume name")
-                    if not has_content:
-                        st.error("Please add resume content")
         
-        # Display existing resumes
-        resumes = get_resumes()
+        # Display user's resumes
+        st.divider()
+        st.subheader("Saved Resumes")
+        for name, content, file_type in get_user_resumes(st.session_state.user_id):
+            with st.expander(f"📄 {name}"):
+                st.text_area("Content", content, height=200)
+                if st.button(f"Delete {name}"):
+                    delete_resume(st.session_state.user_id, name)
+                    st.rerun()
         
-        if resumes:
-            st.subheader("Saved Resumes")
-            for name, (content, file_type) in resumes.items():
-                with st.expander(f"📄 {name}"):
-                    st.text_area("Resume Content", content, height=200, key=f"resume_{name}")
-                    if st.button(f"Delete {name}"):
-                        delete_resume(name)
-                        st.rerun()
+        if st.button("🚪 Logout"):
+            del st.session_state.user_id
+            st.rerun()
 
     # Main content area
     col1, col2 = st.columns([2, 1])
@@ -653,54 +256,39 @@ if check_password():
     with col1:
         st.header("🎯 Job Posting Analysis")
         job_post = st.text_area("Paste the job posting here", height=200)
-        
-        # Resume selection
-        if resumes:
-            selected_resume = st.selectbox(
-                "Select a resume to use",
-                options=list(resumes.keys())
-            )
-        else:
-            st.warning("Please add a resume in the sidebar first")
-            selected_resume = None
-        
-        custom_questions = st.text_area("Any custom application questions? (Optional)", height=100)
+        custom_questions = st.text_area("Custom application questions (Optional)", 
+                                      height=100)
 
-        if st.button("🎯 Craft My Application Package", type="primary"):
-            if selected_resume and job_post:
-                with st.spinner("Analyzing your fit for this role & building your application package..."):
-                    try:
-                        client = anthropic.Client(api_key=st.secrets["ANTHROPIC_API_KEY"])
+        if st.button("🎯 Analyze Job Fit", type="primary"):
+            if job_post:
+                with st.spinner("Analyzing your fit..."):
+                    # Get all user's resumes
+                    user_resumes = get_user_resumes(st.session_state.user_id)
+                    if not user_resumes:
+                        st.error("Please upload at least one resume first")
+                        return
                         
-                        prompt = f"""Please analyze this job application following a structured format:
-
-## Initial Assessment
-[Your assessment of the role, company, and requirements]
-
-## Match Analysis
-[Detailed analysis of matches and gaps]
-
-## Resume Strategy
-[Strategy for resume tailoring]
-
-## Tailored Resume
-[Complete tailored resume in markdown format]
-
-## Custom Responses
-[Responses to any custom questions]
-
-## Follow-up Actions
-[Recommended next steps]
-
-Job Post: {job_post}
-Resume: {resumes[selected_resume][0]}
-Custom Questions: {custom_questions if custom_questions else 'None'}
-
-Remember to:
-1. Use only quantitative metrics from the original resume
-2. Follow the exact resume template format
-3. Make the tailored resume immediately usable
-4. Keep section headers exactly as shown above"""
+                    combined_resume_context = "\n---\n".join(
+                        content for _, content, _ in user_resumes
+                    )
+                    
+                    try:
+                        client = anthropic.Client(
+                            api_key=st.secrets["ANTHROPIC_API_KEY"]
+                        )
+                        
+                        prompt = f"""Job Post: {job_post}
+                        Resume Context: {combined_resume_context}
+                        Custom Questions: {custom_questions if custom_questions else 'None'}
+                        
+                        Please analyze this application following the format:
+                        
+                        ## Initial Assessment
+                        ## Match Analysis
+                        ## Resume Strategy
+                        ## Tailored Resume
+                        ## Custom Responses
+                        ## Follow-up Actions"""
 
                         message = client.messages.create(
                             model="claude-3-sonnet-20240229",
@@ -708,37 +296,27 @@ Remember to:
                             messages=[{"role": "user", "content": prompt}]
                         )
                         
-                        # Extract the content from the message response
                         analysis = message.content[0].text
+                        save_analysis(st.session_state.user_id, job_post, analysis)
                         
-                        # Validate the response
-                        if validate_claude_response(analysis):
-                            # Parse and display the response
-                            sections = parse_claude_response(analysis)
-                            display_analysis_content(sections, "main")
-                            
-                            # Save analysis to history
-                            save_analysis(job_post, selected_resume, analysis)
-                        else:
-                            st.error("Failed to generate a complete analysis. Please try again.")
+                        # Display analysis
+                        st.markdown(analysis)
                         
                     except Exception as e:
-                        st.error(f"An error occurred during analysis: {str(e)}")
-                        st.write("Error details:", e.__class__.__name__)
-                        import traceback
-                        st.code(traceback.format_exc())
+                        st.error(f"Analysis error: {str(e)}")
             else:
-                st.error("Please provide both a job posting and select a resume")
+                st.error("Please provide a job posting")
 
     with col2:
         st.header("📚 Analysis History")
-        history = get_analysis_history()
+        history = get_user_analysis_history(st.session_state.user_id)
         
         if history:
-            for i, (job_post, resume_name, analysis, timestamp) in enumerate(history):
-                with st.expander(f"Analysis {len(history)-i}: {timestamp}"):
-                    st.write(f"Resume used: {resume_name}")
-                    sections = parse_claude_response(analysis)
-                    display_analysis_content(sections, f"history_{i}")
+            for job_post, analysis, timestamp in history:
+                with st.expander(f"Analysis: {timestamp}"):
+                    st.markdown(analysis)
         else:
             st.info("Your analysis history will appear here")
+
+if __name__ == "__main__":
+    main()
