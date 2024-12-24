@@ -228,35 +228,52 @@ def main():
     # Sidebar for resume management
     with st.sidebar:
         st.header("My Resumes")
-        uploaded_file = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'])
+        uploaded_file = st.file_uploader("Upload Resume", type=['pdf', 'txt', 'docx'], key="resume_uploader")
         
         if uploaded_file:
             file_name = uploaded_file.name.rsplit('.', 1)[0]
+            file_type = uploaded_file.type
             
-            if uploaded_file.type == "application/pdf":
+            # Auto-save the file
+            if file_type == "application/pdf":
                 resume_content = extract_text_from_pdf(uploaded_file)
-            elif uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            elif file_type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                 resume_content = extract_text_from_docx(uploaded_file)
             else:
                 resume_content = uploaded_file.getvalue().decode()
                 
             if resume_content:
-                st.success("✅ File uploaded successfully")
-                if st.button("💾 Save Resume", type="primary"):
-                    save_resume(st.session_state.user_id, file_name, 
-                              resume_content, uploaded_file.type)
-                    st.success(f"✅ Saved: {file_name}")
-                    st.rerun()
+                save_resume(st.session_state.user_id, file_name, resume_content, file_type)
+                st.success(f"✅ {file_name} saved")
         
         # Display user's resumes
         st.divider()
         st.subheader("Saved Resumes")
+        
+        # Create two columns for the resume list
         for name, content, file_type in get_user_resumes(st.session_state.user_id):
-            with st.expander(f"📄 {name}"):
-                st.text_area("Content", content, height=200)
-                if st.button(f"Delete {name}"):
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                if st.button(f"📄 {name}", key=f"view_{name}"):
+                    st.session_state.selected_resume = name
+            with col2:
+                if st.button("❌", key=f"delete_{name}"):
                     delete_resume(st.session_state.user_id, name)
+                    if 'selected_resume' in st.session_state and st.session_state.selected_resume == name:
+                        del st.session_state.selected_resume
                     st.rerun()
+        
+        # Preview panel
+        if 'selected_resume' in st.session_state:
+            st.divider()
+            st.subheader("Preview")
+            selected = next((r for r in get_user_resumes(st.session_state.user_id) 
+                           if r[0] == st.session_state.selected_resume), None)
+            if selected:
+                name, content, file_type = selected
+                st.text_area("Content", content, height=300, key=f"preview_{name}")
+                if st.button("Close Preview"):
+                    del st.session_state.selected_resume
         
         if st.button("🚪 Logout"):
             del st.session_state.user_id
