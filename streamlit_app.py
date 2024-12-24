@@ -268,7 +268,7 @@ def main():
                             
                         if resume_content:
                             save_resume(st.session_state.user_id, file_name, resume_content, file_type)
-                            st.toast(f"Resume saved: {file_name}", icon="✅", duration=3)
+                            st.toast(f"Resume saved: {file_name}")
         
         # Display user's resumes in table format
         st.divider()
